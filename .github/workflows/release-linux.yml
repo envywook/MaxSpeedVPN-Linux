@@ -1,0 +1,164 @@
+name: Release Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Immutable prerelease tag, for example v0.1.0-alpha
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  verify-build-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Verify tag points at dispatched source
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-list -n1 "$RELEASE_TAG")" = "$(git rev-parse HEAD)"
+      - name: Restore
+        working-directory: v2rayN
+        run: |
+          dotnet restore ServiceLib.Tests/ServiceLib.Tests.csproj
+          dotnet restore v2rayN.Desktop/v2rayN.Desktop.csproj -r linux-x64
+      - name: Build and test product slice
+        working-directory: v2rayN
+        run: |
+          dotnet build ServiceLib.Tests/ServiceLib.Tests.csproj --no-restore --configuration Release --nologo
+          dotnet ServiceLib.Tests/bin/Release/net10.0/ServiceLib.Tests.dll \
+            --treenode-filter '/*/*/(CoreManagerTests|MaxSpeedVpn*|RussiaRoutingPresetCompilerTests)/*' \
+            --progress off --no-ansi
+      - name: Validate packaging metadata
+        run: bash scripts/validate-arch-package.sh
+      - name: Publish desktop
+        working-directory: v2rayN
+        run: |
+          dotnet publish v2rayN.Desktop/v2rayN.Desktop.csproj \
+            --configuration Release \
+            --runtime linux-x64 \
+            --self-contained true \
+            --no-restore \
+            -p:PublishSingleFile=false \
+            -p:DebugType=None \
+            -p:DebugSymbols=false \
+            --output "$RUNNER_TEMP/publish"
+      - name: Assemble portable artifact
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          root="$RUNNER_TEMP/stage/MaxSpeedVPN-$version-linux-x64"
+          mkdir -p "$root/app" "$root/packaging/arch"
+          cp -a "$RUNNER_TEMP/publish/." "$root/app/"
+          cp LICENSE NOTICE THIRD_PARTY_NOTICES.md TRADEMARKS.md "$root/"
+          cp packaging/arch/PKGBUILD packaging/arch/maxspeedvpn.desktop "$root/packaging/arch/"
+          cat > "$root/maxspeedvpn" <<'SCRIPT'
+          #!/bin/sh
+          root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+          exec "$root/app/v2rayN" "$@"
+          SCRIPT
+          chmod 755 "$root/maxspeedvpn"
+          mkdir -p dist
+          tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+            -C "$RUNNER_TEMP/stage" -cJf "dist/MaxSpeedVPN-$version-linux-x64.tar.xz" \
+            "MaxSpeedVPN-$version-linux-x64"
+          cp packaging/arch/PKGBUILD "dist/PKGBUILD-$version"
+          (cd dist && sha256sum MaxSpeedVPN-* PKGBUILD-* > SHA256SUMS.txt)
+      - name: Inspect artifacts
+        run: |
+          set -euo pipefail
+          test -x "$RUNNER_TEMP/publish/v2rayN"
+          file "$RUNNER_TEMP/publish/v2rayN"
+          tar -tf dist/MaxSpeedVPN-*-linux-x64.tar.xz | grep -q '/app/v2rayN$'
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maxspeedvpn-linux-release
+          path: dist/*
+          if-no-files-found: error
+
+  arch-package-smoke:
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:base
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          submodules: recursive
+          fetch-depth: 0
+      - name: Build, install, and launch package on Arch
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: bash scripts/arch-package-smoke.sh "$GITHUB_WORKSPACE" "$RELEASE_TAG"
+
+  publish:
+    needs: [verify-build-package, arch-package-smoke]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: maxspeedvpn-linux-release
+          path: dist
+      - name: Publish GitHub prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
+          Первый предварительный релиз MaxSpeedVPN для Linux/Arch.
+
+          Включено:
+          - самостоятельная Avalonia-сборка для Linux x86_64;
+          - состояния запуска и безопасного отключения core;
+          - журнал на главном экране;
+          - пресеты маршрутизации для РФ;
+          - контракт привилегированного Polkit/D-Bus helper;
+          - PKGBUILD, собранный и запущенный в чистом Arch-контейнере.
+
+          Важно: это ранняя alpha. Привилегированный `maxspeedvpn-netd`, реальный TUN/nftables/DNS rollback и полный end-to-end VPN smoke ещё не входят в эту сборку. Не используйте её как подтверждённый leak-safe kill switch.
+          EOF
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+            gh release edit "$RELEASE_TAG" --title "MaxSpeedVPN Linux $version" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+          else
+            gh release create "$RELEASE_TAG" dist/* --verify-tag \
+              --title "MaxSpeedVPN Linux $version" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+          fi
+      - name: Release read-back
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          expected=$(find dist -maxdepth 1 -type f -printf '%f\n' | sort)
+          actual=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | sort)
+          test "$actual" = "$expected"
+          gh release view "$RELEASE_TAG" --json url,tagName,isDraft,isPrerelease,assets
