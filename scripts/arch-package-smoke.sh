@@ -16,7 +16,7 @@ if [[ ! -w "$repo" ]]; then
 fi
 chown -R builder:builder "$build_repo"
 
-su builder -c "cd '$build_repo' && makepkg --config /etc/makepkg.conf -p packaging/arch/PKGBUILD --noconfirm --cleanbuild"
+su builder -c "cd '$build_repo' && makepkg --config /etc/makepkg.conf -p \"$build_repo/packaging/arch/PKGBUILD\" --noconfirm --cleanbuild"
 pkg=$(find "$build_repo" -maxdepth 1 -name 'maxspeedvpn-linux-*.pkg.tar.zst' -print -quit)
 test -n "$pkg"
 pacman -U --noconfirm "$pkg"
