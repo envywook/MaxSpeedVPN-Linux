@@ -36,7 +36,10 @@ PY
 grep -q '^User=maxspeedvpn$' "$unit"
 grep -q '^NoNewPrivileges=yes$' "$unit"
 grep -q '^CapabilityBoundingSet=CAP_NET_ADMIN$' "$unit"
-! grep -Eq 'CAP_SYS_ADMIN|auth_admin_keep|flush ruleset' "$unit" "$policy"
+if grep -Eq 'CAP_SYS_ADMIN|auth_admin_keep|flush ruleset' "$unit" "$policy"; then
+  echo "unsafe privilege or firewall directive found" >&2
+  exit 1
+fi
 grep -q '^Exec=maxspeedvpn$' "$desktop"
 
 echo MAXSPEEDVPN_ARCH_PACKAGE_METADATA_OK
