@@ -56,4 +56,5 @@ EOF
     "$pkgdir/usr/share/doc/$pkgname/NOTICE"
   install -Dm644 "$srcdir/MaxSpeedVPN-Linux-${pkgver}-alpha/THIRD_PARTY_NOTICES.md" \
     "$pkgdir/usr/share/doc/$pkgname/THIRD_PARTY_NOTICES.md"
+  chmod 755 "$pkgdir/usr/share/doc"
 }
