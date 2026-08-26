@@ -28,7 +28,11 @@ test -x /opt/maxspeedvpn/v2rayN
 test -x /opt/maxspeedvpn/bin/xray/xray
 test -x /opt/maxspeedvpn/bin/sing_box/sing-box
 desktop-file-validate /usr/share/applications/maxspeedvpn.desktop
-pacman -Qkk maxspeedvpn-linux
+verify_output="$(pacman -Qkk maxspeedvpn-linux 2>&1 || true)"
+printf '%s\n' "$verify_output"
+if grep -Eq '[1-9][0-9]* altered files|[1-9][0-9]* missing files' <<< "$verify_output"; then
+  exit 1
+fi
 
 rm -rf /tmp/maxspeedvpn-smoke
 mkdir -p /tmp/maxspeedvpn-smoke/home /tmp/maxspeedvpn-smoke/runtime
