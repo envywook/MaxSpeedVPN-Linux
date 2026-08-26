@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=MaxSpeedVPN
+Comment=VPN and proxy client for Arch Linux
+Exec=maxspeedvpn
+Icon=maxspeedvpn
+Terminal=false
+Categories=Network;Security;
+Keywords=VPN;Proxy;Xray;sing-box;
+StartupNotify=true
+StartupWMClass=MaxSpeedVPN

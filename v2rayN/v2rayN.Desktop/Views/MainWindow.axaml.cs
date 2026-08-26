@@ -145,9 +145,11 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
         }
         else
         {
-            Title = $"{Utils.GetVersion()}";
+            Title = $"MaxSpeedVPN · {Utils.GetVersion()}";
             menuAddServerViaScan.IsVisible = false;
         }
+
+        Opacity = _config.UiItem.MaxSpeedVpnDesktop.WindowOpacityPercent / 100d;
 
         if (_config.UiItem.AutoHideStartup && Utils.IsWindows())
         {

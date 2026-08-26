@@ -64,6 +64,20 @@ public sealed class MaxSpeedVpnSessionStateMachine
         }
     }
 
+    public bool MarkCleanupFailed()
+    {
+        lock (_gate)
+        {
+            if (State != EMaxSpeedVpnSessionState.Disconnecting)
+            {
+                return false;
+            }
+
+            State = EMaxSpeedVpnSessionState.Error;
+            return true;
+        }
+    }
+
     private bool Transition(EMaxSpeedVpnSessionState expected, EMaxSpeedVpnSessionState next)
     {
         lock (_gate)

@@ -83,6 +83,10 @@ public partial class MainWindowViewModel : MyReactiveObject
 
     [Reactive] public partial EGirdOrientation MainGirdOrientation { get; set; }
 
+    [Reactive] public partial string MaxSpeedVpnStatusLabel { get; set; }
+
+    [Reactive] public partial string MaxSpeedVpnStatusAccent { get; set; }
+
     #endregion Menu
 
     #region Init
@@ -92,6 +96,11 @@ public partial class MainWindowViewModel : MyReactiveObject
         _config = AppManager.Instance.Config;
         BlIsWindows = Utils.IsWindows();
         MainGirdOrientation = _config.UiItem.MainGirdOrientation;
+        ApplyMaxSpeedVpnSessionState(CoreManager.Instance.SessionState);
+        AppEvents.MaxSpeedVpnSessionStateChanged
+            .AsObservable()
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(ApplyMaxSpeedVpnSessionState);
 
         #region WhenAnyValue && ReactiveCommand
 
@@ -740,6 +749,13 @@ public partial class MainWindowViewModel : MyReactiveObject
     private async Task LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext)
     {
         await CoreManager.Instance.LoadCore(mainContext, preContext);
+    }
+
+    private void ApplyMaxSpeedVpnSessionState(EMaxSpeedVpnSessionState state)
+    {
+        var status = MaxSpeedVpnDashboardStatus.From(state);
+        MaxSpeedVpnStatusLabel = status.Label;
+        MaxSpeedVpnStatusAccent = status.Accent;
     }
 
     #endregion core job

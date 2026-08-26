@@ -107,6 +107,11 @@ public static class ConfigHandler
         config.UiItem.MaxSpeedVpnDesktop ??= new();
         config.UiItem.MaxSpeedVpnDesktop.WindowOpacityPercent = MaxSpeedVpnDesktopSettings.NormalizeOpacity(config.UiItem.MaxSpeedVpnDesktop.WindowOpacityPercent);
 
+        if (config.UiItem.CurrentTheme.IsNullOrEmpty())
+        {
+            config.UiItem.CurrentTheme = nameof(ETheme.Dark);
+        }
+
         if (config.UiItem.CurrentLanguage.IsNullOrEmpty())
         {
             config.UiItem.CurrentLanguage = Thread.CurrentThread.CurrentCulture.TwoLetterISOLanguageName.Equals("zh", StringComparison.CurrentCultureIgnoreCase)

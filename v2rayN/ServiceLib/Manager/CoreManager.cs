@@ -16,7 +16,12 @@ public class CoreManager
     private ProcessService? _processPreService;
     private bool _linuxSudo = false;
     private Func<bool, string, Task>? _updateFunc;
+    private readonly MaxSpeedVpnSessionStateMachine _session = new();
     private const string _tag = "CoreHandler";
+
+    public EMaxSpeedVpnSessionState SessionState => _session.State;
+
+    private void PublishSessionState() => AppEvents.MaxSpeedVpnSessionStateChanged.Publish(_session.State);
 
     public async Task Init(Config config, Func<bool, string, Task> updateFunc)
     {
@@ -70,36 +75,67 @@ public class CoreManager
             return;
         }
 
-        var node = mainContext.Node;
-        var fileName = Utils.GetBinConfigPath(Global.CoreConfigFileName);
-        var result = await CoreConfigHandler.GenerateClientConfig(mainContext, fileName);
-        if (result.Success != true)
+        if (!_session.BeginConnect())
         {
-            await UpdateFunc(true, result.Msg);
+            await UpdateFunc(false, "Connection change is already in progress.");
             return;
         }
+        PublishSessionState();
 
-        await UpdateFunc(false, $"{node.GetSummary()}");
-        await UpdateFunc(false, $"{Utils.GetRuntimeInfo()}");
-        await UpdateFunc(false, string.Format(ResUI.StartService, DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")));
-        await CoreStop();
-        await Task.Delay(100);
-
-        if (Utils.IsWindows() && (mainContext?.IsTunEnabled == true || preContext?.IsTunEnabled == true))
+        try
         {
+            var node = mainContext.Node;
+            var fileName = Utils.GetBinConfigPath(Global.CoreConfigFileName);
+            var result = await CoreConfigHandler.GenerateClientConfig(mainContext, fileName);
+            if (result.Success != true)
+            {
+                _session.MarkError();
+                PublishSessionState();
+                await UpdateFunc(true, result.Msg);
+                return;
+            }
+
+            await UpdateFunc(false, $"{node.GetSummary()}");
+            await UpdateFunc(false, $"{Utils.GetRuntimeInfo()}");
+            await UpdateFunc(false, string.Format(ResUI.StartService, DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")));
+            await StopCoreProcesses();
             await Task.Delay(100);
-            await WindowsUtils.RemoveTunDevice();
+
+            if (Utils.IsWindows() && (mainContext?.IsTunEnabled == true || preContext?.IsTunEnabled == true))
+            {
+                await Task.Delay(100);
+                await WindowsUtils.RemoveTunDevice();
+            }
+
+            if (!_session.MarkPrepared())
+            {
+                throw new InvalidOperationException("Invalid core connection transition.");
+            }
+            PublishSessionState();
+
+            await CoreStart(mainContext);
+            await WaitForProxyPort(preContext);
+            await CoreStartPreService(preContext);
+
+            AppManager.Instance.RunningCoreType = preContext?.RunCoreType ?? mainContext.RunCoreType;
+
+            if (_processService != null)
+            {
+                _session.MarkConnected();
+                PublishSessionState();
+                await UpdateFunc(true, $"{node.GetSummary()}");
+            }
+            else
+            {
+                _session.MarkError();
+                PublishSessionState();
+            }
         }
-
-        await CoreStart(mainContext);
-        await WaitForProxyPort(preContext);
-        await CoreStartPreService(preContext);
-
-        AppManager.Instance.RunningCoreType = preContext?.RunCoreType ?? mainContext.RunCoreType;
-
-        if (_processService != null)
+        catch
         {
-            await UpdateFunc(true, $"{node.GetSummary()}");
+            _session.MarkError();
+            PublishSessionState();
+            throw;
         }
     }
 
@@ -145,6 +181,25 @@ public class CoreManager
     }
 
     public async Task CoreStop()
+    {
+        if (!_session.BeginDisconnect())
+        {
+            return;
+        }
+        PublishSessionState();
+
+        try
+        {
+            await StopCoreProcesses();
+        }
+        finally
+        {
+            _session.MarkDisconnected();
+            PublishSessionState();
+        }
+    }
+
+    private async Task StopCoreProcesses()
     {
         try
         {

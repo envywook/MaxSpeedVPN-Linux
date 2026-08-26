@@ -8,7 +8,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-    Title="v2rayN"
+    Title="MaxSpeedVPN"
     Width="1200"
     Height="800"
     MinWidth="600"
@@ -110,6 +110,41 @@
                     Content="{x:Static resx:ResUI.menuNewUpdate}"
                     IsVisible="False" />
             </DockPanel>
+
+            <Border
+                Margin="12,4,12,10"
+                Padding="14,10"
+                Background="#CC111827"
+                BorderBrush="#334155"
+                BorderThickness="1"
+                CornerRadius="10"
+                DockPanel.Dock="Top">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10">
+                    <Ellipse
+                        Width="10"
+                        Height="10"
+                        Fill="{Binding MaxSpeedVpnStatusAccent}"
+                        VerticalAlignment="Center" />
+                    <TextBlock
+                        Grid.Column="1"
+                        FontSize="16"
+                        FontWeight="SemiBold"
+                        Text="{Binding MaxSpeedVpnStatusLabel}"
+                        VerticalAlignment="Center" />
+                    <TextBlock
+                        Grid.Column="2"
+                        Foreground="#CBD5E1"
+                        Text="MaxSpeedVPN · журнал подключения отображается ниже"
+                        VerticalAlignment="Center" />
+                    <Border
+                        Grid.Column="3"
+                        Padding="10,5"
+                        Background="#1E293B"
+                        CornerRadius="8">
+                        <TextBlock Foreground="#A5B4FC" Text="Маршрутизация: РФ оптимальный" />
+                    </Border>
+                </Grid>
+            </Border>
 
             <ContentControl x:Name="contentStatusBarView" DockPanel.Dock="Bottom" />
 

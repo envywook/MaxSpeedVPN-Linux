@@ -53,4 +53,30 @@ public class MaxSpeedVpnSessionStateMachineTests
         await session.MarkDisconnected().Should().BeTrue();
         await session.State.Should().BeEqualTo(EMaxSpeedVpnSessionState.Disconnected);
     }
+
+    [Test]
+    public async Task StartFailure_LeavesSessionInError()
+    {
+        var session = new MaxSpeedVpnSessionStateMachine();
+
+        await session.BeginConnect().Should().BeTrue();
+        await session.MarkPrepared().Should().BeTrue();
+        await session.MarkError().Should().BeTrue();
+        await session.State.Should().BeEqualTo(EMaxSpeedVpnSessionState.Error);
+    }
+
+    [Test]
+    public async Task FailedCleanup_StaysInErrorUntilCleanupSucceeds()
+    {
+        var session = new MaxSpeedVpnSessionStateMachine();
+
+        await session.BeginConnect().Should().BeTrue();
+        await session.MarkPrepared().Should().BeTrue();
+        await session.MarkConnected().Should().BeTrue();
+        await session.BeginDisconnect().Should().BeTrue();
+        await session.MarkCleanupFailed().Should().BeTrue();
+        await session.State.Should().BeEqualTo(EMaxSpeedVpnSessionState.Error);
+        await session.BeginDisconnect().Should().BeTrue();
+        await session.MarkDisconnected().Should().BeTrue();
+    }
 }

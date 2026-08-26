@@ -36,4 +36,10 @@ public class CoreManagerTests
     {
         await CoreManager.ShouldRunAsSudo(isTunLaunch: true, coreType, isNonWindows: true).Should().BeFalse();
     }
+
+    [Test]
+    public async Task CoreManager_ExposesConnectionStateForDashboard()
+    {
+        await CoreManager.Instance.SessionState.Should().BeEqualTo(EMaxSpeedVpnSessionState.Disconnected);
+    }
 }
