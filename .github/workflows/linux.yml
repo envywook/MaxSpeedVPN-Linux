@@ -15,9 +15,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - name: Restore
+      - name: Restore tests
         working-directory: v2rayN
-        run: dotnet restore v2rayN.slnx
+        run: dotnet restore ServiceLib.Tests/ServiceLib.Tests.csproj
+      - name: Restore desktop
+        working-directory: v2rayN
+        run: dotnet restore v2rayN.Desktop/v2rayN.Desktop.csproj
       - name: Build tests
         working-directory: v2rayN
         run: dotnet build ServiceLib.Tests/ServiceLib.Tests.csproj --no-restore --configuration Release --nologo
