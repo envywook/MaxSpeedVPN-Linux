@@ -9,12 +9,20 @@ depends=('glibc' 'zlib' 'icu' 'fontconfig' 'libx11' 'libice' 'libsm')
 makedepends=('dotnet-sdk')
 source=(
   "MaxSpeedVPN-Linux-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/refs/tags/v${pkgver}-alpha.tar.gz"
+  "GlobalHotKeys.tar.gz::https://github.com/2dust/GlobalHotKeys/archive/162d401dfe0140b41d1fa349b9aadb4060e739b1.tar.gz"
   "v2rayN-core-bin.zip::https://github.com/2dust/v2rayN-core-bin/raw/00107fb83fabdce90bb402a79ec3d9631f26f16d/v2rayN-linux-64.zip"
 )
 sha256sums=(
   'SKIP'
+  'SKIP'
   'd35f5527c6338b376676aa518eaf1852708bc28f8b5fac45306b58c8e2bbe898'
 )
+
+prepare() {
+  rm -rf "MaxSpeedVPN-Linux-${pkgver}-alpha/v2rayN/GlobalHotKeys"
+  cp -a "GlobalHotKeys-162d401dfe0140b41d1fa349b9aadb4060e739b1" \
+    "MaxSpeedVPN-Linux-${pkgver}-alpha/v2rayN/GlobalHotKeys"
+}
 
 build() {
   cd "MaxSpeedVPN-Linux-${pkgver}-alpha/v2rayN"

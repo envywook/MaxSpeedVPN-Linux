@@ -43,5 +43,6 @@ fi
 grep -q '^Exec=maxspeedvpn$' "$desktop"
 grep -q 'v2rayN-core-bin/raw/00107fb83fabdce90bb402a79ec3d9631f26f16d/v2rayN-linux-64.zip' "$pkgbuild"
 grep -q 'd35f5527c6338b376676aa518eaf1852708bc28f8b5fac45306b58c8e2bbe898' "$pkgbuild"
+grep -q 'GlobalHotKeys/archive/162d401dfe0140b41d1fa349b9aadb4060e739b1.tar.gz' "$pkgbuild"
 
 echo MAXSPEEDVPN_ARCH_PACKAGE_METADATA_OK
