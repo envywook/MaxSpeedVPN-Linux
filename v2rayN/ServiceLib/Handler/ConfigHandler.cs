@@ -104,6 +104,8 @@ public static class ConfigHandler
         config.UiItem ??= new();
         config.UiItem.MainColumnItem ??= [];
         config.UiItem.WindowSizeItem ??= [];
+        config.UiItem.MaxSpeedVpnDesktop ??= new();
+        config.UiItem.MaxSpeedVpnDesktop.WindowOpacityPercent = MaxSpeedVpnDesktopSettings.NormalizeOpacity(config.UiItem.MaxSpeedVpnDesktop.WindowOpacityPercent);
 
         if (config.UiItem.CurrentLanguage.IsNullOrEmpty())
         {

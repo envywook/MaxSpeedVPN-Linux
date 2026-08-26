@@ -85,6 +85,16 @@ public class MsgUIItem
 }
 
 [Serializable]
+public class MaxSpeedVpnDesktopSettings
+{
+    public bool DarkTheme { get; set; } = true;
+    public int WindowOpacityPercent { get; set; } = 100;
+    public bool ShowLogsOnDashboard { get; set; } = true;
+
+    public static int NormalizeOpacity(int requested) => Math.Clamp(requested, 70, 100);
+}
+
+[Serializable]
 public class UIItem
 {
     public bool EnableAutoAdjustMainLvColWidth { get; set; }
@@ -104,6 +114,7 @@ public class UIItem
     public List<ColumnItem> MainColumnItem { get; set; }
     public List<WindowSizeItem> WindowSizeItem { get; set; }
     public bool HideColumnIpInfo { get; set; }
+    public MaxSpeedVpnDesktopSettings MaxSpeedVpnDesktop { get; set; } = new();
 }
 
 [Serializable]
