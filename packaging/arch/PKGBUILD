@@ -43,6 +43,7 @@ package() {
 
   install -Dm755 /dev/stdin "$pkgdir/usr/bin/maxspeedvpn" <<'EOF'
 #!/bin/sh
+export V2RAYN_LOCAL_APPLICATION_DATA_V2=1
 exec /opt/maxspeedvpn/v2rayN "$@"
 EOF
 

@@ -77,6 +77,7 @@ jobs:
           cat > "$root/maxspeedvpn" <<'SCRIPT'
           #!/bin/sh
           root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+          export V2RAYN_LOCAL_APPLICATION_DATA_V2=1
           exec "$root/app/v2rayN" "$@"
           SCRIPT
           chmod 755 "$root/maxspeedvpn"
