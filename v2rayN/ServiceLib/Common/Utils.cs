@@ -1081,6 +1081,15 @@ public class Utils
 
     public static string StartupPath()
     {
+        if (IsLinux())
+        {
+            var xdgDataHome = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+            var dataHome = xdgDataHome.IsNotEmpty()
+                ? xdgDataHome
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
+            return Path.Combine(dataHome, "MaxSpeedVPN");
+        }
+
         if (Environment.GetEnvironmentVariable(Global.LocalAppData) == "1")
         {
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "v2rayN");
