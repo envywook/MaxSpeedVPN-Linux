@@ -5,17 +5,26 @@ repo="${1:-/work}"
 tag="${2:-v0.1.0-alpha}"
 cd "$repo"
 
-pacman -Syu --noconfirm --needed base-devel git dotnet-sdk libx11 libice libsm fontconfig icu zlib xvfb xorg-xwd
+pacman -Syu --noconfirm --needed base-devel git dotnet-sdk libx11 libice libsm fontconfig icu zlib xvfb xorg-xwd desktop-file-utils
 useradd -m -s /bin/bash builder 2>/dev/null || true
-chown -R builder:builder "$repo"
 
-su builder -c "cd '$repo' && makepkg --config /etc/makepkg.conf -p packaging/arch/PKGBUILD --noconfirm --cleanbuild"
-pkg=$(find "$repo" -maxdepth 1 -name 'maxspeedvpn-linux-*.pkg.tar.zst' -print -quit)
+build_repo="$repo"
+if [[ ! -w "$repo" ]]; then
+  build_repo=/tmp/MaxSpeedVPN-Linux
+  rm -rf "$build_repo"
+  cp -a "$repo" "$build_repo"
+fi
+chown -R builder:builder "$build_repo"
+
+su builder -c "cd '$build_repo' && makepkg --config /etc/makepkg.conf -p packaging/arch/PKGBUILD --noconfirm --cleanbuild"
+pkg=$(find "$build_repo" -maxdepth 1 -name 'maxspeedvpn-linux-*.pkg.tar.zst' -print -quit)
 test -n "$pkg"
 pacman -U --noconfirm "$pkg"
 
 test -x /usr/bin/maxspeedvpn
 test -x /opt/maxspeedvpn/v2rayN
+test -x /opt/maxspeedvpn/bin/xray/xray
+test -x /opt/maxspeedvpn/bin/sing_box/sing-box
 desktop-file-validate /usr/share/applications/maxspeedvpn.desktop
 pacman -Qkk maxspeedvpn-linux
 

@@ -9,8 +9,12 @@ depends=('glibc' 'zlib' 'icu' 'fontconfig' 'libx11' 'libice' 'libsm')
 makedepends=('dotnet-sdk')
 source=(
   "MaxSpeedVPN-Linux-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/refs/tags/v${pkgver}-alpha.tar.gz"
+  "v2rayN-core-bin.zip::https://github.com/2dust/v2rayN-core-bin/raw/00107fb83fabdce90bb402a79ec3d9631f26f16d/v2rayN-linux-64.zip"
 )
-sha256sums=('SKIP')
+sha256sums=(
+  'SKIP'
+  'd35f5527c6338b376676aa518eaf1852708bc28f8b5fac45306b58c8e2bbe898'
+)
 
 build() {
   cd "MaxSpeedVPN-Linux-${pkgver}-alpha/v2rayN"
@@ -27,6 +31,7 @@ build() {
 package() {
   install -d "$pkgdir/opt/maxspeedvpn"
   cp -a "$srcdir/publish/." "$pkgdir/opt/maxspeedvpn/"
+  cp -a "$srcdir/v2rayN-linux-64/." "$pkgdir/opt/maxspeedvpn/"
 
   install -Dm755 /dev/stdin "$pkgdir/usr/bin/maxspeedvpn" <<'EOF'
 #!/bin/sh

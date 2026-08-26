@@ -66,6 +66,12 @@ jobs:
           root="$RUNNER_TEMP/stage/MaxSpeedVPN-$version-linux-x64"
           mkdir -p "$root/app" "$root/packaging/arch"
           cp -a "$RUNNER_TEMP/publish/." "$root/app/"
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/v2rayN-core-bin.zip" \
+            "https://github.com/2dust/v2rayN-core-bin/raw/00107fb83fabdce90bb402a79ec3d9631f26f16d/v2rayN-linux-64.zip"
+          echo "d35f5527c6338b376676aa518eaf1852708bc28f8b5fac45306b58c8e2bbe898  $RUNNER_TEMP/v2rayN-core-bin.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/v2rayN-core-bin.zip" -d "$RUNNER_TEMP/core-bin"
+          cp -a "$RUNNER_TEMP/core-bin/v2rayN-linux-64/." "$root/app/"
           cp LICENSE NOTICE THIRD_PARTY_NOTICES.md TRADEMARKS.md "$root/"
           cp packaging/arch/PKGBUILD packaging/arch/maxspeedvpn.desktop "$root/packaging/arch/"
           cat > "$root/maxspeedvpn" <<'SCRIPT'
@@ -85,7 +91,10 @@ jobs:
           set -euo pipefail
           test -x "$RUNNER_TEMP/publish/v2rayN"
           file "$RUNNER_TEMP/publish/v2rayN"
-          tar -tf dist/MaxSpeedVPN-*-linux-x64.tar.xz | grep -q '/app/v2rayN$'
+          test -x "$RUNNER_TEMP/stage"/MaxSpeedVPN-*-linux-x64/app/bin/xray/xray
+          test -x "$RUNNER_TEMP/stage"/MaxSpeedVPN-*-linux-x64/app/bin/sing_box/sing-box
+          tar -tf dist/MaxSpeedVPN-*-linux-x64.tar.xz > "$RUNNER_TEMP/archive-contents.txt"
+          grep -q '/app/v2rayN$' "$RUNNER_TEMP/archive-contents.txt"
           (cd dist && sha256sum -c SHA256SUMS.txt)
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -99,6 +108,8 @@ jobs:
     container:
       image: archlinux:base
     steps:
+      - name: Install checkout prerequisites
+        run: pacman -Sy --noconfirm --needed git ca-certificates
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.release_tag }}
