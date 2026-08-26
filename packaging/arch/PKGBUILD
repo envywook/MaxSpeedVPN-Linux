@@ -1,17 +1,24 @@
-pkgname=maxspeedvpn-linux
-pkgver=0.1.0
+pkgname=maxspeedvpn-linux-git
+pkgver=7.24.8.r2.ga0c0992d
 pkgrel=1
 pkgdesc='MaxSpeedVPN client for Arch Linux'
 arch=('x86_64')
 url='https://github.com/envywook/MaxSpeedVPN-Linux'
 license=('GPL-3.0-only')
 depends=('glibc' 'zlib' 'icu' 'fontconfig' 'libx11' 'libice' 'libsm')
-makedepends=('dotnet-sdk')
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+makedepends=('dotnet-sdk' 'git')
+provides=('maxspeedvpn-linux')
+conflicts=('maxspeedvpn-linux')
+source=('git+https://github.com/envywook/MaxSpeedVPN-Linux.git')
 sha256sums=('SKIP')
 
+pkgver() {
+  cd MaxSpeedVPN-Linux
+  git describe --long --tags --always | sed 's/^v//;s/-/.r/;s/-/./'
+}
+
 build() {
-  cd "MaxSpeedVPN-Linux-$pkgver/v2rayN"
+  cd MaxSpeedVPN-Linux/v2rayN
   dotnet publish v2rayN.Desktop/v2rayN.Desktop.csproj \
     --configuration Release \
     --runtime linux-x64 \
@@ -31,12 +38,12 @@ package() {
 exec /opt/maxspeedvpn/v2rayN "$@"
 EOF
 
-  install -Dm644 "$srcdir/MaxSpeedVPN-Linux-$pkgver/packaging/arch/maxspeedvpn.desktop" \
+  install -Dm644 "$srcdir/MaxSpeedVPN-Linux/packaging/arch/maxspeedvpn.desktop" \
     "$pkgdir/usr/share/applications/maxspeedvpn.desktop"
-  install -Dm644 "$srcdir/MaxSpeedVPN-Linux-$pkgver/LICENSE" \
+  install -Dm644 "$srcdir/MaxSpeedVPN-Linux/LICENSE" \
     "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  install -Dm644 "$srcdir/MaxSpeedVPN-Linux-$pkgver/NOTICE" \
+  install -Dm644 "$srcdir/MaxSpeedVPN-Linux/NOTICE" \
     "$pkgdir/usr/share/doc/$pkgname/NOTICE"
-  install -Dm644 "$srcdir/MaxSpeedVPN-Linux-$pkgver/THIRD_PARTY_NOTICES.md" \
+  install -Dm644 "$srcdir/MaxSpeedVPN-Linux/THIRD_PARTY_NOTICES.md" \
     "$pkgdir/usr/share/doc/$pkgname/THIRD_PARTY_NOTICES.md"
 }

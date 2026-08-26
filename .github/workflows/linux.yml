@@ -1,0 +1,36 @@
+name: Linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        working-directory: v2rayN
+        run: dotnet restore v2rayN.slnx
+      - name: Build tests
+        working-directory: v2rayN
+        run: dotnet build ServiceLib.Tests/ServiceLib.Tests.csproj --no-restore --configuration Release --nologo
+      - name: MaxSpeedVPN tests
+        working-directory: v2rayN
+        run: >-
+          dotnet ServiceLib.Tests/bin/Release/net10.0/ServiceLib.Tests.dll
+          --treenode-filter '/*/*/(CoreManagerTests|MaxSpeedVpn*|RussiaRoutingPresetCompilerTests)/*'
+          --progress off --no-ansi
+      - name: Build desktop
+        working-directory: v2rayN
+        run: dotnet build v2rayN.Desktop/v2rayN.Desktop.csproj --no-restore --configuration Release --nologo
+      - name: Validate package metadata
+        run: bash scripts/validate-arch-package.sh
+      - name: Diff check
+        run: git diff --check
