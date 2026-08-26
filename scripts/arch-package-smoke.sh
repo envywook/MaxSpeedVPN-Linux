@@ -5,7 +5,7 @@ repo="${1:-/work}"
 tag="${2:-v0.1.0-alpha}"
 cd "$repo"
 
-pacman -Syu --noconfirm --needed base-devel git dotnet-sdk libx11 libice libsm fontconfig icu zlib xvfb xorg-xwd desktop-file-utils
+pacman -Syu --noconfirm --needed base-devel git dotnet-sdk libx11 libice libsm fontconfig icu zlib xorg-server-xvfb xorg-xwd desktop-file-utils
 useradd -m -s /bin/bash builder 2>/dev/null || true
 
 build_repo="$repo"
