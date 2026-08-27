@@ -1,0 +1,10 @@
+MaxSpeedVPN Linux standalone client
+Copyright (C) 2026 MaxSpeedVPN contributors
+
+The application source is licensed under GPL-3.0-only; see LICENSE.
+Bundled third-party components remain under their own licenses; see
+THIRD_PARTY_NOTICES.md and the license files installed by the Arch package.
+
+MaxSpeedVPN product branding, official release signatures, domains, update
+channels, and operated services are separate from the GPL license on code; see
+TRADEMARKS.md.
