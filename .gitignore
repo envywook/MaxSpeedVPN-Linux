@@ -1,0 +1,6 @@
+**/bin/
+**/obj/
+artifacts/
+*.pkg.tar.zst
+.idea/
+.vscode/

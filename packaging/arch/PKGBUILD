@@ -1,0 +1,56 @@
+pkgname=maxspeedvpn-linux
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Standalone MaxSpeedVPN local proxy client for Linux'
+arch=('x86_64')
+url='https://github.com/envywook/MaxSpeedVPN-Linux'
+license=('custom')
+depends=('fontconfig' 'libx11' 'libice' 'libsm')
+makedepends=('dotnet-sdk>=10')
+options=('!strip' '!debug')
+_singbox_version=1.13.19
+_source_commit='REPLACE_WITH_RELEASE_COMMIT'
+source=(
+  "maxspeedvpn-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/${_source_commit}.tar.gz"
+  "sing-box-${_singbox_version}-linux-amd64.tar.gz::https://github.com/SagerNet/sing-box/releases/download/v${_singbox_version}/sing-box-${_singbox_version}-linux-amd64.tar.gz"
+  "sing-box-LICENSE::https://raw.githubusercontent.com/SagerNet/sing-box/v${_singbox_version}/LICENSE"
+  "NotoSans-Regular.ttf::https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf"
+  "Noto-LICENSE::https://raw.githubusercontent.com/notofonts/noto-fonts/main/LICENSE"
+)
+sha256sums=(
+  'SKIP'
+  'ef88a9e577d474210867bd708933d042e9b70106529df2656182c9db90106aa1'
+  '650d5e3b99a446fb38e820fa87a49562e0c79eab868fff58618ac487a58e554c'
+  'b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5'
+  '0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb'
+)
+
+prepare() {
+  local source_dir
+  source_dir=$(find "$srcdir" -maxdepth 1 -type d -name 'MaxSpeedVPN-Linux-*' -print -quit)
+  [[ -n "$source_dir" ]]
+  rm -rf "$srcdir/app"
+  mv "$source_dir" "$srcdir/app"
+}
+
+build() {
+  cd "$srcdir/app"
+  dotnet restore MaxSpeedVPN.slnx
+  dotnet publish src/MaxSpeedVPN.Desktop/MaxSpeedVPN.Desktop.csproj \
+    -c Release -r linux-x64 --self-contained true \
+    -p:PublishSingleFile=true -p:DebugType=None \
+    -o "$srcdir/publish"
+}
+
+package() {
+  install -dm755 "$pkgdir/opt/maxspeedvpn"
+  cp -a "$srcdir/publish/." "$pkgdir/opt/maxspeedvpn/"
+  install -Dm755 "$srcdir/sing-box-${_singbox_version}-linux-amd64/sing-box" \
+    "$pkgdir/opt/maxspeedvpn/bin/sing-box"
+  install -Dm644 "$srcdir/NotoSans-Regular.ttf" "$pkgdir/usr/share/fonts/maxspeedvpn/NotoSans-Regular.ttf"
+  install -Dm755 "$srcdir/app/packaging/arch/maxspeedvpn" "$pkgdir/usr/bin/maxspeedvpn"
+  install -Dm644 "$srcdir/app/packaging/arch/maxspeedvpn.desktop" "$pkgdir/usr/share/applications/maxspeedvpn.desktop"
+  install -Dm644 "$srcdir/app/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$srcdir/sing-box-LICENSE" "$pkgdir/usr/share/licenses/$pkgname/sing-box-LICENSE"
+  install -Dm644 "$srcdir/Noto-LICENSE" "$pkgdir/usr/share/licenses/$pkgname/Noto-LICENSE"
+}

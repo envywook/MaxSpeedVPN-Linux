@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MaxSpeedVPN
+Comment=Private network client
+Exec=maxspeedvpn
+Terminal=false
+Categories=Network;Security;
+StartupNotify=true
