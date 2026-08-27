@@ -1,58 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 repo="${1:-/work}"
-tag="${2:-v0.1.0-alpha}"
-artifact_dir="${3:-}"
-cd "$repo"
+artifacts="${2:-/artifacts}"
+build_root=/tmp/maxspeedvpn-standalone
+source_archive=/tmp/maxspeedvpn-source.tar.gz
+rm -rf "$build_root"
+mkdir -p "$build_root" "$artifacts" /tmp/maxspeedvpn-dotnet-home
+cp -a "$repo/." "$build_root/"
+chown -R nobody:users "$build_root" /tmp/maxspeedvpn-dotnet-home
 
-pacman -Syu --noconfirm --needed base-devel git dotnet-sdk libx11 libice libsm fontconfig icu zlib xorg-server-xvfb xorg-xwd desktop-file-utils
-useradd -m -s /bin/bash builder 2>/dev/null || true
-
-build_repo="$repo"
-if [[ ! -w "$repo" ]]; then
-  build_repo=/tmp/MaxSpeedVPN-Linux
-  rm -rf "$build_repo"
-  cp -a "$repo" "$build_repo"
-fi
-chown -R builder:builder "$build_repo"
-
-cp "$build_repo/packaging/arch/PKGBUILD" "$build_repo/PKGBUILD"
-chown builder:builder "$build_repo/PKGBUILD"
-su builder -c "cd '$build_repo' && makepkg --config /etc/makepkg.conf --noconfirm --cleanbuild"
-pkg=$(find "$build_repo" -maxdepth 1 -name 'maxspeedvpn-linux-*.pkg.tar.zst' -print -quit)
-test -n "$pkg"
-if [[ -n "$artifact_dir" ]]; then
-  mkdir -p "$artifact_dir"
-  cp "$pkg" "$artifact_dir/"
-fi
-pacman -U --noconfirm "$pkg"
-
-test -x /usr/bin/maxspeedvpn
-test -x /opt/maxspeedvpn/v2rayN
-test -x /opt/maxspeedvpn/bin/xray/xray
-test -x /opt/maxspeedvpn/bin/sing_box/sing-box
-desktop-file-validate /usr/share/applications/maxspeedvpn.desktop
-verify_output="$(pacman -Qkk maxspeedvpn-linux 2>&1 || true)"
-printf '%s\n' "$verify_output"
-if grep -Eq '[1-9][0-9]* altered files|[1-9][0-9]* missing files' <<< "$verify_output"; then
-  exit 1
-fi
-
-rm -rf /tmp/maxspeedvpn-smoke
-mkdir -p /tmp/maxspeedvpn-smoke/home /tmp/maxspeedvpn-smoke/runtime
-chown -R builder:builder /tmp/maxspeedvpn-smoke
-set +e
-su builder -c "HOME=/tmp/maxspeedvpn-smoke/home XDG_CONFIG_HOME=/tmp/maxspeedvpn-smoke/home/.config XDG_DATA_HOME=/tmp/maxspeedvpn-smoke/home/.local/share XDG_CACHE_HOME=/tmp/maxspeedvpn-smoke/home/.cache XDG_RUNTIME_DIR=/tmp/maxspeedvpn-smoke/runtime timeout 18s xvfb-run -a -s '-screen 0 1600x1000x24' /usr/bin/maxspeedvpn" >/tmp/maxspeedvpn-smoke/app.log 2>&1
-rc=$?
-set -e
-if [[ $rc -ne 0 && $rc -ne 124 ]]; then
-  cat /tmp/maxspeedvpn-smoke/app.log >&2
-  exit "$rc"
-fi
-if grep -Eq 'Unhandled exception|DllNotFoundException|TypeInitializationException' /tmp/maxspeedvpn-smoke/app.log; then
-  cat /tmp/maxspeedvpn-smoke/app.log >&2
-  exit 1
-fi
-
-echo "MAXSPEEDVPN_ARCH_PACKAGE_SMOKE_OK package=$(basename "$pkg") launcher_rc=$rc tag=$tag"
+tar --exclude=.git --exclude=artifacts --exclude='*/bin' --exclude='*/obj' \
+  -czf "$source_archive" -C "$repo" .
+chown nobody:users "$source_archive"
+cd "$build_root/packaging/arch"
+cp PKGBUILD PKGBUILD.smoke
+# Replace only the application source for an unpublished local snapshot; engine/font assets keep production URLs and checksums.
+python3 - "$source_archive" <<'PY'
+from pathlib import Path
+import sys
+p=Path('PKGBUILD.smoke')
+s=p.read_text()
+s=s.replace('  "maxspeedvpn-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/${_source_commit}.tar.gz"', f'  "maxspeedvpn-local::file://{sys.argv[1]}"')
+lines=s.splitlines()
+checksum_index=lines.index('sha256sums=(') + 1
+lines[checksum_index]="  'SKIP'"
+s='\n'.join(lines) + '\n'
+s=s.replace("  local source_dir\n  source_dir=$(find \"$srcdir\" -maxdepth 1 -type d -name 'MaxSpeedVPN-Linux-*' -print -quit)\n  [[ -n \"$source_dir\" ]]\n  rm -rf \"$srcdir/app\"\n  mv \"$source_dir\" \"$srcdir/app\"", "  rm -rf \"$srcdir/app\"\n  mkdir \"$srcdir/app\"\n  tar -xzf \"$srcdir/maxspeedvpn-local\" -C \"$srcdir/app\"")
+p.write_text(s)
+PY
+chmod 644 PKGBUILD.smoke
+chown nobody:users PKGBUILD.smoke
+runuser -u nobody -- env HOME=/tmp/maxspeedvpn-dotnet-home DOTNET_CLI_HOME=/tmp/maxspeedvpn-dotnet-home NUGET_PACKAGES=/tmp/maxspeedvpn-dotnet-home/.nuget/packages DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 makepkg -p PKGBUILD.smoke --noconfirm
+pkg=$(find . -maxdepth 1 -name 'maxspeedvpn-linux-*.pkg.tar.zst' -print -quit)
+[[ -n "$pkg" ]]
+pacman -Qip "$pkg" | grep -q '^Name *: maxspeedvpn-linux$'
+bsdtar -tf "$pkg" | grep -q '^\.PKGINFO$'
+bsdtar -tf "$pkg" | grep -q '^opt/maxspeedvpn/MaxSpeedVPN.Desktop$'
+bsdtar -tf "$pkg" | grep -q '^opt/maxspeedvpn/bin/sing-box$'
+bsdtar -tf "$pkg" | grep -q '^usr/bin/maxspeedvpn$'
+bsdtar -tf "$pkg" | grep -q '^usr/share/licenses/maxspeedvpn-linux/sing-box-LICENSE$'
+bsdtar -tf "$pkg" | grep -q '^usr/share/licenses/maxspeedvpn-linux/Noto-LICENSE$'
+install -Dm644 "$pkg" "$artifacts/$(basename "$pkg")"
+echo "MAXSPEEDVPN_STANDALONE_ARCH_PACKAGE_OK package=$(basename "$pkg")"

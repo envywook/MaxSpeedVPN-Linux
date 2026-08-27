@@ -1,62 +1,56 @@
 pkgname=maxspeedvpn-linux
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
-options=('!debug')
-pkgdesc='MaxSpeedVPN client for Arch Linux'
+pkgdesc='Standalone MaxSpeedVPN local proxy client for Linux'
 arch=('x86_64')
 url='https://github.com/envywook/MaxSpeedVPN-Linux'
-license=('GPL-3.0-only')
-depends=('glibc' 'zlib' 'icu' 'fontconfig' 'libx11' 'libice' 'libsm')
-makedepends=('dotnet-sdk')
+license=('custom')
+depends=('fontconfig' 'libx11' 'libice' 'libsm')
+makedepends=('dotnet-sdk>=10')
+options=('!strip' '!debug')
+_singbox_version=1.13.19
+_source_commit='88f56fbc659f8acc4c2941df774aac075995d890'
 source=(
-  "MaxSpeedVPN-Linux-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/refs/tags/v${pkgver}-alpha.tar.gz"
-  "GlobalHotKeys.tar.gz::https://github.com/2dust/GlobalHotKeys/archive/162d401dfe0140b41d1fa349b9aadb4060e739b1.tar.gz"
-  "v2rayN-core-bin.zip::https://github.com/2dust/v2rayN-core-bin/raw/00107fb83fabdce90bb402a79ec3d9631f26f16d/v2rayN-linux-64.zip"
+  "maxspeedvpn-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/${_source_commit}.tar.gz"
+  "sing-box-${_singbox_version}-linux-amd64.tar.gz::https://github.com/SagerNet/sing-box/releases/download/v${_singbox_version}/sing-box-${_singbox_version}-linux-amd64.tar.gz"
+  "sing-box-LICENSE::https://raw.githubusercontent.com/SagerNet/sing-box/v${_singbox_version}/LICENSE"
+  "NotoSans-Regular.ttf::https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf"
+  "Noto-LICENSE::https://raw.githubusercontent.com/notofonts/noto-fonts/main/LICENSE"
 )
 sha256sums=(
-  'SKIP'
-  'SKIP'
-  'd35f5527c6338b376676aa518eaf1852708bc28f8b5fac45306b58c8e2bbe898'
+  '7e19d807978c99aec07197e02a2e4554779ef681614dda58a403b22bdfd07b9d'
+  'ef88a9e577d474210867bd708933d042e9b70106529df2656182c9db90106aa1'
+  '650d5e3b99a446fb38e820fa87a49562e0c79eab868fff58618ac487a58e554c'
+  'b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5'
+  '0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb'
 )
 
 prepare() {
-  rm -rf "MaxSpeedVPN-Linux-${pkgver}-alpha/v2rayN/GlobalHotKeys"
-  cp -a "GlobalHotKeys-162d401dfe0140b41d1fa349b9aadb4060e739b1" \
-    "MaxSpeedVPN-Linux-${pkgver}-alpha/v2rayN/GlobalHotKeys"
+  local source_dir
+  source_dir=$(find "$srcdir" -maxdepth 1 -type d -name 'MaxSpeedVPN-Linux-*' -print -quit)
+  [[ -n "$source_dir" ]]
+  rm -rf "$srcdir/app"
+  mv "$source_dir" "$srcdir/app"
 }
 
 build() {
-  cd "MaxSpeedVPN-Linux-${pkgver}-alpha/v2rayN"
-  dotnet publish v2rayN.Desktop/v2rayN.Desktop.csproj \
-    --configuration Release \
-    --runtime linux-x64 \
-    --self-contained true \
-    -p:PublishSingleFile=false \
-    -p:DebugType=None \
-    -p:DebugSymbols=false \
-    --output "$srcdir/publish"
+  cd "$srcdir/app"
+  dotnet restore MaxSpeedVPN.slnx
+  dotnet publish src/MaxSpeedVPN.Desktop/MaxSpeedVPN.Desktop.csproj \
+    -c Release -r linux-x64 --self-contained true \
+    -p:PublishSingleFile=true -p:DebugType=None \
+    -o "$srcdir/publish"
 }
 
 package() {
-  install -d "$pkgdir/opt/maxspeedvpn"
+  install -dm755 "$pkgdir/opt/maxspeedvpn"
   cp -a "$srcdir/publish/." "$pkgdir/opt/maxspeedvpn/"
-  cp -a "$srcdir/v2rayN-linux-64/." "$pkgdir/opt/maxspeedvpn/"
-
-  install -Dm755 /dev/stdin "$pkgdir/usr/bin/maxspeedvpn" <<'EOF'
-#!/bin/sh
-export V2RAYN_LOCAL_APPLICATION_DATA_V2=1
-exec /opt/maxspeedvpn/v2rayN "$@"
-EOF
-
-  install -Dm644 "$srcdir/MaxSpeedVPN-Linux-${pkgver}-alpha/packaging/arch/maxspeedvpn.desktop" \
-    "$pkgdir/usr/share/applications/maxspeedvpn.desktop"
-  install -Dm644 "$srcdir/MaxSpeedVPN-Linux-${pkgver}-alpha/v2rayN/v2rayN.Desktop/v2rayN.png" \
-    "$pkgdir/usr/share/pixmaps/maxspeedvpn.png"
-  install -Dm644 "$srcdir/MaxSpeedVPN-Linux-${pkgver}-alpha/LICENSE" \
-    "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  install -Dm644 "$srcdir/MaxSpeedVPN-Linux-${pkgver}-alpha/NOTICE" \
-    "$pkgdir/usr/share/doc/$pkgname/NOTICE"
-  install -Dm644 "$srcdir/MaxSpeedVPN-Linux-${pkgver}-alpha/THIRD_PARTY_NOTICES.md" \
-    "$pkgdir/usr/share/doc/$pkgname/THIRD_PARTY_NOTICES.md"
-  chmod 755 "$pkgdir/usr/share/doc"
+  install -Dm755 "$srcdir/sing-box-${_singbox_version}-linux-amd64/sing-box" \
+    "$pkgdir/opt/maxspeedvpn/bin/sing-box"
+  install -Dm644 "$srcdir/NotoSans-Regular.ttf" "$pkgdir/usr/share/fonts/maxspeedvpn/NotoSans-Regular.ttf"
+  install -Dm755 "$srcdir/app/packaging/arch/maxspeedvpn" "$pkgdir/usr/bin/maxspeedvpn"
+  install -Dm644 "$srcdir/app/packaging/arch/maxspeedvpn.desktop" "$pkgdir/usr/share/applications/maxspeedvpn.desktop"
+  install -Dm644 "$srcdir/app/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$srcdir/sing-box-LICENSE" "$pkgdir/usr/share/licenses/$pkgname/sing-box-LICENSE"
+  install -Dm644 "$srcdir/Noto-LICENSE" "$pkgdir/usr/share/licenses/$pkgname/Noto-LICENSE"
 }

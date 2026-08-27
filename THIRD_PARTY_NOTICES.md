@@ -1,12 +1,25 @@
 # Third-party notices
 
-MaxSpeedVPN Linux is based on [2dust/v2rayN](https://github.com/2dust/v2rayN), licensed under GPL-3.0. The upstream copyright and license are preserved in `LICENSE` and the Git history.
+MaxSpeedVPN Linux invokes external network cores as separate processes and packages selected redistributable assets.
 
-The application references independent components including Avalonia, ReactiveUI, Semi.Avalonia, Xray-core, sing-box, SQLite libraries, SkiaSharp and other NuGet/runtime dependencies. Their names and exact versions are declared in:
+## sing-box
 
-- `v2rayN/Directory.Packages.props`
-- `v2rayN/ServiceLib/ServiceLib.csproj`
-- `v2rayN/v2rayN.Desktop/v2rayN.Desktop.csproj`
-- `v2rayN/ServiceLib/Manager/CoreInfoManager.cs`
+- Project: https://github.com/SagerNet/sing-box
+- Packaged version: `1.13.19`, Linux amd64
+- License: GNU General Public License v3.0-or-later
+- The exact upstream license text is installed as `/usr/share/licenses/maxspeedvpn-linux/sing-box-LICENSE`.
 
-Each component remains subject to its own license. Release packaging must include license metadata for the exact bundled versions and must not infer that upstream projects endorse MaxSpeedVPN.
+## Noto Sans
+
+- Project: https://github.com/notofonts/noto-fonts
+- Packaged file: `NotoSans-Regular.ttf`
+- License: SIL Open Font License 1.1
+- The exact upstream license text is installed as `/usr/share/licenses/maxspeedvpn-linux/Noto-LICENSE`.
+
+## Xray-core
+
+- Project: https://github.com/XTLS/Xray-core
+- Status: supported by the runtime/config layer but not bundled in the `0.2.0` package and not selectable in the current GUI.
+- License: Mozilla Public License 2.0 according to upstream.
+
+Avalonia and .NET dependencies are restored from NuGet during build and retain their respective licenses and copyright notices. This notice does not replace the complete license metadata supplied by those distributions.
