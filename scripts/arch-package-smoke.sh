@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo="${1:-/work}"
 tag="${2:-v0.1.0-alpha}"
+artifact_dir="${3:-}"
 cd "$repo"
 
 pacman -Syu --noconfirm --needed base-devel git dotnet-sdk libx11 libice libsm fontconfig icu zlib xorg-server-xvfb xorg-xwd desktop-file-utils
@@ -21,6 +22,10 @@ chown builder:builder "$build_repo/PKGBUILD"
 su builder -c "cd '$build_repo' && makepkg --config /etc/makepkg.conf --noconfirm --cleanbuild"
 pkg=$(find "$build_repo" -maxdepth 1 -name 'maxspeedvpn-linux-*.pkg.tar.zst' -print -quit)
 test -n "$pkg"
+if [[ -n "$artifact_dir" ]]; then
+  mkdir -p "$artifact_dir"
+  cp "$pkg" "$artifact_dir/"
+fi
 pacman -U --noconfirm "$pkg"
 
 test -x /usr/bin/maxspeedvpn

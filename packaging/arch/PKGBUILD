@@ -1,6 +1,7 @@
 pkgname=maxspeedvpn-linux
 pkgver=0.1.0
 pkgrel=1
+options=('!debug')
 pkgdesc='MaxSpeedVPN client for Arch Linux'
 arch=('x86_64')
 url='https://github.com/envywook/MaxSpeedVPN-Linux'

@@ -119,7 +119,13 @@ jobs:
       - name: Build, install, and launch package on Arch
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
-        run: bash scripts/arch-package-smoke.sh "$GITHUB_WORKSPACE" "$RELEASE_TAG"
+        run: bash scripts/arch-package-smoke.sh "$GITHUB_WORKSPACE" "$RELEASE_TAG" "$GITHUB_WORKSPACE/arch-dist"
+      - name: Upload Arch package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maxspeedvpn-arch-package
+          path: arch-dist/*.pkg.tar.zst
+          if-no-files-found: error
 
   publish:
     needs: [verify-build-package, arch-package-smoke]
@@ -133,6 +139,16 @@ jobs:
         with:
           name: maxspeedvpn-linux-release
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: maxspeedvpn-arch-package
+          path: dist
+      - name: Refresh release checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f dist/SHA256SUMS.txt
+          (cd dist && sha256sum MaxSpeedVPN-* PKGBUILD-* maxspeedvpn-linux-*.pkg.tar.zst > SHA256SUMS.txt)
       - name: Publish GitHub prerelease
         shell: bash
         env:
