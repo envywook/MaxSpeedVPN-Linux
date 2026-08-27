@@ -135,11 +135,11 @@ jobs:
         with:
           ref: ${{ inputs.release_tag }}
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: maxspeedvpn-linux-release
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: maxspeedvpn-arch-package
           path: dist
