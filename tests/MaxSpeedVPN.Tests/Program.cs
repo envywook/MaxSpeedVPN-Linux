@@ -15,7 +15,18 @@ var tests = new (string Name, Func<Task> Run)[]
     ("SingBoxRuntime unexpected exit propagates to controller", SingBoxRuntimeUnexpectedExitPropagatesToController),
     ("SingBoxRuntime secures and removes runtime config", SingBoxRuntimeSecuresAndRemovesRuntimeConfig),
     ("SingBoxConfig passes real engine validation", SingBoxConfigPassesRealEngineValidation),
-    ("XrayConfig passes real engine validation when available", XrayConfigPassesRealEngineValidation)
+    ("XrayConfig passes real engine validation when available", XrayConfigPassesRealEngineValidation),
+    ("ProfileStore persists protocol metadata and private permissions", ProfileStorePersistsProtocolMetadataAndPrivatePermissions),
+    ("ProfileStore upserts stable endpoint without Custom labels", ProfileStoreUpsertsStableEndpointWithoutCustomLabels),
+    ("TcpLatencyProbe reports reachable and unreachable endpoints", TcpLatencyProbeReportsReachability),
+    ("LiveLatencyMonitor refreshes all servers and stops cleanly", LiveLatencyMonitorRefreshesAllServersAndStopsCleanly),
+    ("Naive profile parser preserves protocol metadata", NaiveProfileParserPreservesProtocolMetadata),
+    ("Naive config passes real engine validation", NaiveConfigPassesRealEngineValidation),
+    ("Mieru simple link parser preserves protocol metadata", MieruSimpleLinkParserPreservesProtocolMetadata),
+    ("Mieru runtime adapter requires the native client", MieruRuntimeAdapterRequiresNativeClient),
+    ("TUN request is fixed-scope and validates endpoint", TunRequestIsFixedScopeAndValidatesEndpoint),
+    ("TUN transaction rolls back in reverse order", TunTransactionRollsBackInReverseOrder),
+    ("TUN transaction rolls back after partial failure", TunTransactionRollsBackAfterPartialFailure)
 };
 
 var failed = 0;
@@ -272,6 +283,156 @@ static async Task XrayConfigPassesRealEngineValidation()
     finally { File.Delete(configPath); }
 }
 
+static async Task ProfileStorePersistsProtocolMetadataAndPrivatePermissions()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-profiles-{Guid.NewGuid():N}");
+    try
+    {
+        var store = new ProfileStore(root);
+        var stored = StoredProfile.FromVpnProfile(SampleProfile());
+        await store.UpsertAsync(stored);
+        var loaded = await store.LoadAsync();
+        Equal(1, loaded.Count);
+        Equal("VLESS Reality", loaded[0].ProtocolLabel);
+        Equal("vless", loaded[0].Protocol);
+        Equal("Netherlands", loaded[0].Name);
+        if (!OperatingSystem.IsWindows())
+        {
+            var mode = File.GetUnixFileMode(Path.Combine(root, "profiles.json"));
+            Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, mode);
+        }
+    }
+    finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+}
+
+static async Task ProfileStoreUpsertsStableEndpointWithoutCustomLabels()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-profiles-{Guid.NewGuid():N}");
+    try
+    {
+        var store = new ProfileStore(root);
+        await store.UpsertAsync(StoredProfile.FromVpnProfile(SampleProfile()));
+        await store.UpsertAsync(StoredProfile.FromVpnProfile(SampleProfile() with { Name = "NL Fast" }));
+        var loaded = await store.LoadAsync();
+        Equal(1, loaded.Count);
+        Equal("NL Fast", loaded[0].Name);
+        if (loaded[0].ProtocolLabel.Contains("Custom", StringComparison.OrdinalIgnoreCase))
+            throw new Exception("protocol label must never degrade to Custom");
+    }
+    finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+}
+
+static async Task TcpLatencyProbeReportsReachability()
+{
+    var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+    listener.Start();
+    var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+    var accept = listener.AcceptTcpClientAsync();
+    var probe = new TcpLatencyProbe(TimeSpan.FromSeconds(2));
+    var reachable = await probe.MeasureAsync("127.0.0.1", port);
+    using var accepted = await accept;
+    if (!reachable.IsReachable || reachable.Milliseconds is null) throw new Exception("reachable endpoint was not measured");
+    listener.Stop();
+    var unreachable = await probe.MeasureAsync("127.0.0.1", port);
+    Equal(false, unreachable.IsReachable);
+}
+
+static async Task LiveLatencyMonitorRefreshesAllServersAndStopsCleanly()
+{
+    var probe = new FakeLatencyProbe();
+    await using var monitor = new LiveLatencyMonitor(probe, TimeSpan.FromMilliseconds(20));
+    var profiles = new[]
+    {
+        StoredProfile.FromVpnProfile(SampleProfile()),
+        StoredProfile.FromVpnProfile(SampleProfile() with { Id = "second", Host = "second.example" })
+    };
+    var snapshots = new List<IReadOnlyDictionary<string, LatencyResult>>();
+    monitor.Updated += value => snapshots.Add(value);
+    await monitor.RefreshAsync(profiles);
+    Equal(2, probe.Count);
+    await monitor.StartAsync(() => profiles);
+    await Task.Delay(75);
+    await monitor.StopAsync();
+    var stoppedAt = probe.Count;
+    await Task.Delay(50);
+    Equal(stoppedAt, probe.Count);
+    if (snapshots.Count < 2) throw new Exception("live monitor did not publish refreshes");
+}
+
+static Task NaiveProfileParserPreservesProtocolMetadata()
+{
+    var profile = new ProfileParser().ParseStored("naive+https://alice:secret@naive.example:443#Naive%20Paris");
+    Equal("naive", profile.Protocol);
+    Equal("NaiveProxy", profile.ProtocolLabel);
+    Equal("Naive Paris", profile.Name);
+    Equal("naive.example", profile.Host);
+    Equal(443, profile.Port);
+    return Task.CompletedTask;
+}
+
+static async Task NaiveConfigPassesRealEngineValidation()
+{
+    var executable = Environment.GetEnvironmentVariable("MAXSPEEDVPN_TEST_SING_BOX");
+    if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable)) throw new Exception("real sing-box is required");
+    var profile = new ProfileParser().ParseStored("naive+https://alice:secret@naive.example:443#Naive");
+    var configPath = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-naive-{Guid.NewGuid():N}.json");
+    await File.WriteAllTextAsync(configPath, new SingBoxConfigWriter().Write(profile, 10808, enableTun: false));
+    try
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo(executable) { RedirectStandardError = true, UseShellExecute = false };
+        startInfo.ArgumentList.Add("check"); startInfo.ArgumentList.Add("-c"); startInfo.ArgumentList.Add(configPath);
+        using var process = System.Diagnostics.Process.Start(startInfo) ?? throw new Exception("could not start sing-box");
+        await process.WaitForExitAsync();
+        var error = await process.StandardError.ReadToEndAsync();
+        if (process.ExitCode != 0) throw new Exception($"Naive config check failed: {error.Trim()}");
+    }
+    finally { File.Delete(configPath); }
+}
+
+static Task MieruSimpleLinkParserPreservesProtocolMetadata()
+{
+    var profile = new ProfileParser().ParseStored("mierus://baozi:secret@1.2.3.4?profile=fast&port=6666&protocol=TCP");
+    Equal("mieru", profile.Protocol);
+    Equal("Mieru", profile.ProtocolLabel);
+    Equal("fast", profile.Name);
+    Equal("1.2.3.4", profile.Host);
+    Equal(6666, profile.Port);
+    return Task.CompletedTask;
+}
+
+static Task MieruRuntimeAdapterRequiresNativeClient()
+{
+    var profile = new ProfileParser().ParseStored("mierus://baozi:secret@1.2.3.4?profile=fast&port=6666&protocol=TCP");
+    Throws<FileNotFoundException>(() => MieruRuntimeAdapter.Create("/missing/mieru", profile, Path.GetTempPath(), 10808));
+    return Task.CompletedTask;
+}
+
+static Task TunRequestIsFixedScopeAndValidatesEndpoint()
+{
+    var request = TunRequest.Create("1.2.3.4", 443);
+    Equal("maxspeed0", request.InterfaceName);
+    Equal("172.19.0.1/30", request.Address);
+    Equal("1.2.3.4", request.ServerAddress);
+    Throws<ArgumentException>(() => TunRequest.Create("; rm -rf /", 443));
+    Throws<ArgumentOutOfRangeException>(() => TunRequest.Create("1.2.3.4", 0));
+    return Task.CompletedTask;
+}
+
+static async Task TunTransactionRollsBackInReverseOrder()
+{
+    var executor = new RecordingTunExecutor();
+    await using var transaction = await TunTransaction.ApplyAsync(executor, TunRequest.Create("1.2.3.4", 443));
+    await transaction.DisposeAsync();
+    Equal("AddTable,AddRule,AddRoute,DeleteRoute,DeleteRule,DeleteTable", string.Join(',', executor.Calls));
+}
+
+static async Task TunTransactionRollsBackAfterPartialFailure()
+{
+    var executor = new RecordingTunExecutor(failAt: "AddRoute");
+    await ThrowsAsync<InvalidOperationException>(() => TunTransaction.ApplyAsync(executor, TunRequest.Create("1.2.3.4", 443)));
+    Equal("AddTable,AddRule,AddRoute,DeleteRule,DeleteTable", string.Join(',', executor.Calls));
+}
+
 static VpnProfile SampleProfile() => new("nl", "Netherlands", "server.example", 443, "00000000-0000-0000-0000-000000000001", "reality", "cdn.example", "chrome", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8", "ab");
 
 static int GetFreePort()
@@ -313,6 +474,35 @@ static async Task ThrowsAsync<T>(Func<Task> action) where T : Exception
     try { await action(); }
     catch (T) { return; }
     throw new Exception($"expected {typeof(T).Name}");
+}
+
+sealed class RecordingTunExecutor : ITunExecutor
+{
+    private readonly string? _failAt;
+    public List<string> Calls { get; } = [];
+    public RecordingTunExecutor(string? failAt = null) => _failAt = failAt;
+    private Task Record(string call)
+    {
+        Calls.Add(call);
+        if (_failAt == call) throw new InvalidOperationException(call);
+        return Task.CompletedTask;
+    }
+    public Task AddTableAsync(TunRequest request, CancellationToken cancellationToken) => Record("AddTable");
+    public Task AddRuleAsync(TunRequest request, CancellationToken cancellationToken) => Record("AddRule");
+    public Task AddRouteAsync(TunRequest request, CancellationToken cancellationToken) => Record("AddRoute");
+    public Task DeleteRouteAsync(TunRequest request, CancellationToken cancellationToken) => Record("DeleteRoute");
+    public Task DeleteRuleAsync(TunRequest request, CancellationToken cancellationToken) => Record("DeleteRule");
+    public Task DeleteTableAsync(TunRequest request, CancellationToken cancellationToken) => Record("DeleteTable");
+}
+
+sealed class FakeLatencyProbe : ILatencyProbe
+{
+    public int Count { get; private set; }
+    public Task<LatencyResult> MeasureAsync(string host, int port, CancellationToken cancellationToken = default)
+    {
+        Count++;
+        return Task.FromResult(new LatencyResult(true, 12, DateTimeOffset.UtcNow));
+    }
 }
 
 sealed class FakeRuntime : IProxyRuntime

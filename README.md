@@ -2,76 +2,62 @@
 
 Самостоятельный Arch-first клиент MaxSpeedVPN на Avalonia/.NET. Это clean-room Linux-приложение: оно не использует код, сборки или архитектуру v2rayN.
 
-> **Статус 0.2.0 alpha:** текущий vertical slice поднимает локальный SOCKS/HTTP proxy на `127.0.0.1:10808`. Он пока не изменяет системный proxy, DNS или маршруты и не создаёт TUN-интерфейс.
+> **Статус 0.3.0 alpha:** стабильный режим — локальный SOCKS/HTTP proxy на `127.0.0.1:10808`. TUN boundary и rollback уже покрыты тестами, но system-wide TUN намеренно не включён в пакет до rooted end-to-end проверки Polkit/D-Bus helper без утечек маршрутов и DNS.
 
-## Что уже работает
+## Что работает
 
-- импорт VLESS Reality TCP URI;
-- генерация проверенных конфигураций для sing-box и Xray;
-- запуск core отдельным непривилегированным процессом;
-- readiness-проверка локального listener перед состоянием «подключено»;
-- корректный stop, обработка неожиданного завершения и cleanup временного конфига;
-- приватные XDG runtime-каталоги и файлы с правами только для пользователя;
-- собственный Avalonia UI без компонентов v2rayN;
-- воспроизводимый Arch Linux пакет с bundled sing-box `1.13.19` и локальным Noto Sans.
+- импорт и сохранение профилей **VLESS Reality**, **NaiveProxy** и **Mieru** с настоящим именем и протоколом — без ярлыка `Custom`;
+- общий TCP ping всех серверов и live ping каждые 5 секунд, пока приложение открыто;
+- тёмный полупрозрачный Avalonia UI, официальный логотип приложения и tray icon;
+- VLESS и NaiveProxy конфиги проходят реальный `sing-box 1.13.19 check`;
+- Mieru simple links парсятся как Mieru, а пакет содержит нативный `mieru 3.36.0`; его запуск остаётся gated до изолированного lifecycle smoke;
+- запуск core отдельным непривилегированным процессом, readiness local listener, stop и cleanup;
+- приватное XDG-хранилище профилей и runtime-файлов с правами только пользователя;
+- bundled sing-box `1.13.19`, `libcronet.so` для Naive outbound и Mieru `3.36.0`.
 
-## Чего пока нет
+## Ограничения alpha
 
-- TUN/VPN для всего устройства;
-- system proxy;
-- split routing и региональных пресетов;
-- kill switch, DNS/policy-routing rollback;
-- привилегированного D-Bus/Polkit helper;
-- выбора Xray в UI и bundled Xray binary.
+- TUN для всего устройства ещё не включён;
+- system proxy, split routing, kill switch и DNS policy ещё не включены;
+- Mieru import/ping доступен, но native connect gated до process-isolation smoke;
+- Xray остаётся внешним adapter без bundled binary и выбора в UI.
 
-Эти функции не имитируются в интерфейсе и появятся только вместе с узкой, rollback-safe системной интеграцией.
+Мы не рисуем фиктивные переключатели: privileged networking появится только после реального rooted E2E с rollback маршрутов, nftables и DNS.
 
 ## Установка на Arch Linux
 
-Скачайте файл `maxspeedvpn-linux-0.2.0-1-x86_64.pkg.tar.zst` со страницы [Releases](https://github.com/envywook/MaxSpeedVPN-Linux/releases) и установите:
+Скачайте `maxspeedvpn-linux-0.3.0-1-x86_64.pkg.tar.zst` со страницы [Releases](https://github.com/envywook/MaxSpeedVPN-Linux/releases):
 
 ```bash
-sudo pacman -U ./maxspeedvpn-linux-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U ./maxspeedvpn-linux-0.3.0-1-x86_64.pkg.tar.zst
 maxspeedvpn
 ```
 
-После импорта профиля направьте приложение в локальный proxy `127.0.0.1:10808`.
-
-## Portable archive
-
-Portable-архив распаковывается без установки:
-
-```bash
-tar -xf maxspeedvpn-linux-0.2.0-x86_64.tar.zst
-./maxspeedvpn-linux-0.2.0-x86_64/maxspeedvpn
-```
+После выбора VLESS или NaiveProxy профиль поднимает локальный proxy `127.0.0.1:10808`.
 
 ## Архитектура
 
-- `MaxSpeedVPN.Core` — профиль, строгий parser поддерживаемого VLESS subset, deterministic sing-box/Xray config и lifecycle внешнего core;
-- `MaxSpeedVPN.Desktop` — непривилегированный Avalonia GUI;
-- sing-box/Xray — только внешние процессы;
-- временный generated config хранится в пользовательском XDG runtime-каталоге и удаляется после остановки.
+- `MaxSpeedVPN.Core` — protocol-aware profile store, parser, ping monitor, sing-box/Xray adapters и lifecycle core;
+- `MaxSpeedVPN.Desktop` — непривилегированный Avalonia GUI + tray lifecycle;
+- sing-box/Mieru/Xray — отдельные процессы, без выполнения произвольных root-команд;
+- `TunRequest`/`TunTransaction` — фиксированный typed contract и обратный rollback partial failure;
+- `packaging/{dbus,polkit,systemd}` — подготовленная узкая boundary для будущего `maxspeedvpn-networkd`, не устанавливаемая до rooted gate.
 
-Будущий `maxspeedvpn-networkd` будет отдельным минимальным root-helper через D-Bus/Polkit. Он не будет принимать arbitrary shell commands, raw nftables scripts, произвольные пути или core JSON.
+Helper не принимает shell commands, raw nft scripts, произвольные пути или core JSON. Polkit требует отдельную административную авторизацию на настройку сессии и не кэширует её для следующих сессий.
 
 ## Проверка
 
-Для разработки требуется .NET SDK 10:
-
 ```bash
 dotnet run --project tests/MaxSpeedVPN.Tests/MaxSpeedVPN.Tests.csproj -c Release
-dotnet build MaxSpeedVPN.slnx -c Release
+dotnet build src/MaxSpeedVPN.Desktop/MaxSpeedVPN.Desktop.csproj -c Release -r linux-x64
 ```
 
-Перед `v0.2.0-alpha.1` прошли 14/14 тестов, реальные `sing-box check` и `xray run -test`, сборка Arch-пакета, установка через `pacman -U` и запуск установленного GUI под Xvfb.
+0.3.0 alpha имеет 25/25 core tests, real-engine sing-box/Xray validation, profile-permission tests, live-ping cancellation tests и TUN rollback tests. Релиз публикуется только после package/install/runtime smoke и GitHub asset read-back.
 
 ## Лицензия и бренд
 
-Исходный код этого standalone-клиента распространяется по [GPL-3.0-only](LICENSE). В пакет включаются внешние компоненты под их собственными лицензиями; см. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Тексты лицензий устанавливаются в `/usr/share/licenses/maxspeedvpn-linux/`.
-
-Название **MaxSpeedVPN**, официальный логотип, домены, каналы обновлений и подписи официальных релизов не предоставляются как часть GPL-лицензии на код. Производная сборка должна ясно обозначать независимое происхождение и не выдавать себя за официальный продукт MaxSpeedVPN; подробности — в [TRADEMARKS.md](TRADEMARKS.md).
+Исходный код распространяется по [GPL-3.0-only](LICENSE). Bundled компоненты сохраняют собственные лицензии; см. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Политика бренда — [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Целевая платформа
 
-Сейчас поддерживается Arch Linux x86_64. Текущий alpha-релиз — честный локальный proxy MVP, а не полноценный system-wide VPN.
+Arch Linux x86_64. 0.3.0 alpha — multi-protocol local-proxy client, не готовый system-wide VPN.

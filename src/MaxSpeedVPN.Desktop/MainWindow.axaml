@@ -1,156 +1,151 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:MaxSpeedVPN.Desktop"
         x:Class="MaxSpeedVPN.Desktop.MainWindow"
-        Width="1120" Height="720" MinWidth="920" MinHeight="620"
-        Background="#080A0D" FontFamily="Inter"
+        Width="1180" Height="760" MinWidth="980" MinHeight="660"
+        TransparencyLevelHint="Mica,Blur,AcrylicBlur,Transparent"
+        Background="#E8070910" FontFamily="Inter"
+        Icon="avares://MaxSpeedVPN.Desktop/Assets/maxspeedvpn.ico"
         Title="MaxSpeedVPN">
-  <Grid RowDefinitions="Auto,*" ColumnDefinitions="220,*">
-    <Border x:Name="ImportOverlay" Grid.ColumnSpan="2" Grid.RowSpan="2" ZIndex="10" Background="#B0000000" IsVisible="False">
-      <Border Width="620" Padding="24" CornerRadius="14" Background="#11151B" BorderBrush="#28FFFFFF" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+  <Grid RowDefinitions="Auto,*">
+    <Border x:Name="ImportOverlay" Grid.RowSpan="2" ZIndex="20" Background="#D9000000" IsVisible="False">
+      <Border Width="680" Padding="26" CornerRadius="20" Background="#F00B0E16" BorderBrush="#426C79FF" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">
         <StackPanel Spacing="14">
-          <TextBlock Text="Импорт VLESS Reality TCP" Foreground="#F2F4F7" FontSize="20" FontWeight="SemiBold" />
-          <TextBlock Text="URI используется только для текущего запуска и не сохраняется на диск." Foreground="#89919D" FontSize="12" />
-          <TextBox x:Name="ProfileUriTextBox" PlaceholderText="vless://uuid@host:443?..." AcceptsReturn="True" TextWrapping="Wrap" MinHeight="100" />
-          <TextBlock x:Name="ImportErrorText" Foreground="#E8A7A7" FontSize="11" IsVisible="False" />
+          <TextBlock Text="Добавить сервер" Foreground="#F6F8FF" FontSize="23" FontWeight="SemiBold" />
+          <TextBlock Text="VLESS Reality · NaiveProxy · Mieru. Протокол и имя сохраняются без ярлыка Custom." Foreground="#929AAF" FontSize="12" />
+          <TextBox x:Name="ProfileUriTextBox" PlaceholderText="vless://… · naive+https://… · mierus://…" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="112" />
+          <TextBlock x:Name="ImportErrorText" Foreground="#FF9AAB" FontSize="11" IsVisible="False" TextWrapping="Wrap" />
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
-            <Button Content="Отмена" Click="CancelImport_Click" />
-            <Button Content="Импортировать" Classes="ghost" Click="ConfirmImport_Click" />
+            <Button Content="Отмена" Classes="secondary" Click="CancelImport_Click" />
+            <Button Content="Сохранить сервер" Classes="primary" Click="ConfirmImport_Click" />
           </StackPanel>
         </StackPanel>
       </Border>
     </Border>
-    <Border Grid.ColumnSpan="2" Background="#0D1015" BorderBrush="#18FFFFFF" BorderThickness="0,0,0,1" Padding="24,17">
+
+    <Border Background="#D50A0D15" BorderBrush="#1FFFFFFF" BorderThickness="0,0,0,1" Padding="24,15">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-          <Border Width="32" Height="32" CornerRadius="10" Background="#675CFF">
-            <TextBlock Text="M" Foreground="White" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-          </Border>
+          <Image Width="38" Height="38" Source="avares://MaxSpeedVPN.Desktop/Assets/maxspeedvpn.png" />
           <StackPanel Spacing="0">
-            <TextBlock Text="MaxSpeedVPN" Foreground="#F5F7FA" FontSize="16" FontWeight="SemiBold" />
-            <TextBlock Text="PRIVATE NETWORK" Foreground="#6E7683" FontSize="9" LetterSpacing="1.7" />
+            <TextBlock Text="MaxSpeedVPN" Foreground="#FAFBFF" FontSize="17" FontWeight="SemiBold" />
+            <TextBlock Text="LINUX · PRIVATE NETWORK" Foreground="#687089" FontSize="9" LetterSpacing="1.8" />
           </StackPanel>
         </StackPanel>
-        <Border Grid.Column="2" Background="#13231C" BorderBrush="#285D45" BorderThickness="1" CornerRadius="14" Padding="12,6">
+        <Border Grid.Column="2" Background="#161A28" BorderBrush="#2CFFFFFF" BorderThickness="1" CornerRadius="15" Padding="12,7">
           <StackPanel Orientation="Horizontal" Spacing="7">
             <Ellipse x:Name="EngineDot" Width="7" Height="7" Fill="#7E8794" VerticalAlignment="Center" />
-            <TextBlock x:Name="EngineStatusText" Text="Проверяем движок" Foreground="#B8BEC8" FontSize="12" />
+            <TextBlock x:Name="EngineStatusText" Text="Проверяем движки" Foreground="#BAC1D0" FontSize="12" />
           </StackPanel>
         </Border>
       </Grid>
     </Border>
 
-    <Border Grid.Row="1" Background="#0B0D11" BorderBrush="#12FFFFFF" BorderThickness="0,0,1,0" Padding="16,24">
-      <Grid RowDefinitions="Auto,*,Auto">
+    <Grid Grid.Row="1" Margin="30,24" RowDefinitions="Auto,*,Auto">
+      <Grid ColumnDefinitions="*,Auto">
         <StackPanel Spacing="6">
-          <Border Classes="nav active"><TextBlock Text="●  Главная" Foreground="#B4AEFF" /></Border>
-          <Border Classes="nav" Opacity="0.45"><TextBlock Text="◇  Серверы · позже" Foreground="#858D98" /></Border>
-          <Border Classes="nav" Opacity="0.45"><TextBlock Text="⌁  Маршруты · позже" Foreground="#858D98" /></Border>
-          <Border Classes="nav" Opacity="0.45"><TextBlock Text="⚙  Настройки · позже" Foreground="#858D98" /></Border>
+          <TextBlock Text="Сеть под контролем" Foreground="#F7F8FD" FontSize="30" FontWeight="SemiBold" LetterSpacing="-0.8" />
+          <TextBlock Text="Серверы с честным протоколом, быстрый общий пинг и live-проверка без v2rayN Custom." Foreground="#828BA0" FontSize="13" />
         </StackPanel>
-        <Border Grid.Row="2" Background="#0F1217" BorderBrush="#14FFFFFF" BorderThickness="1" CornerRadius="10" Padding="12">
-          <StackPanel Spacing="5">
-            <TextBlock Text="STANDALONE CLIENT" Foreground="#777F8C" FontSize="9" LetterSpacing="1.4" />
-            <TextBlock Text="Собственный интерфейс и логика" Foreground="#CFD4DC" FontSize="11" TextWrapping="Wrap" />
-            <TextBlock Text="sing-box работает отдельно" Foreground="#737B87" FontSize="10" />
-          </StackPanel>
-        </Border>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Bottom">
+          <Button x:Name="PingAllButton" Content="Пинг всех" Classes="secondary" Click="PingAll_Click" />
+          <ToggleButton x:Name="LivePingToggle" Content="Live ping" Classes="live" IsCheckedChanged="LivePingToggle_Changed" />
+          <Button Content="＋ Сервер" Classes="primary" Click="ImportProfile_Click" />
+        </StackPanel>
       </Grid>
-    </Border>
 
-    <ScrollViewer Grid.Row="1" Grid.Column="1">
-      <Grid Margin="38,30" RowDefinitions="Auto,Auto,*">
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Spacing="5">
-            <TextBlock Text="Локальный VLESS-прокси" Foreground="#F3F5F8" FontSize="28" FontWeight="SemiBold" LetterSpacing="-0.8" />
-            <TextBlock Text="Импортируйте VLESS Reality TCP и подключите приложения к 127.0.0.1:10808." Foreground="#858D99" FontSize="14" />
-          </StackPanel>
-          <Button Grid.Column="1" Classes="ghost" Content="＋  Импортировать профиль" Click="ImportProfile_Click" />
-        </Grid>
-
-        <Grid Grid.Row="1" Margin="0,28,0,0" ColumnDefinitions="1.25*,0.75*" ColumnSpacing="18">
-          <Border Classes="panel" Padding="28">
-            <Grid RowDefinitions="Auto,*,Auto">
-              <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Spacing="5">
-                  <TextBlock Text="СТАТУС" Foreground="#6F7783" FontSize="10" LetterSpacing="1.8" />
-                  <TextBlock x:Name="StatusText" Text="Не подключено" Foreground="#F1F3F6" FontSize="22" FontWeight="SemiBold" />
-                </StackPanel>
-                <Border Grid.Column="1" Width="12" Height="12" CornerRadius="6" Background="#3F4650" VerticalAlignment="Center" />
-              </Grid>
-
-              <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="18">
-                <Button x:Name="ConnectButton" Classes="connect" Click="Connect_Click" IsEnabled="False" AutomationProperties.Name="Запустить локальный прокси">
-                  <Grid Width="124" Height="124">
-                    <Ellipse Fill="#675CFF" />
-                    <Ellipse Margin="8" Stroke="#38FFFFFF" StrokeThickness="1" />
-                    <TextBlock Text="⏻" FontFamily="Arial" Foreground="White" FontSize="40" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  </Grid>
-                </Button>
-                <TextBlock x:Name="ConnectHint" Text="Подключиться" Foreground="#B8BEC8" FontSize="13" HorizontalAlignment="Center" />
+      <Grid Grid.Row="1" Margin="0,24,0,0" ColumnDefinitions="0.94*,1.06*" ColumnSpacing="18">
+        <Border Classes="panel" Padding="24">
+          <Grid RowDefinitions="Auto,*,Auto">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="4">
+                <TextBlock Text="СОЕДИНЕНИЕ" Classes="eyebrow" />
+                <TextBlock x:Name="StatusText" Text="Не подключено" Foreground="#F4F6FC" FontSize="23" FontWeight="SemiBold" />
               </StackPanel>
-
-              <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="12">
-                <Border Classes="metric">
-                  <StackPanel><TextBlock Text="РЕЖИМ" Classes="label"/><TextBlock Text="Локальный SOCKS/HTTP" Classes="value"/></StackPanel>
-                </Border>
-                <Border Grid.Column="1" Classes="metric">
-                  <StackPanel><TextBlock Text="ЛОКАЛЬНЫЙ ПОРТ" Classes="label"/><TextBlock Text="127.0.0.1:10808" Classes="value"/></StackPanel>
-                </Border>
-              </Grid>
+              <Border Grid.Column="1" Background="#141A29" CornerRadius="12" Padding="11,6">
+                <TextBlock x:Name="ModeBadgeText" Text="LOCAL PROXY" Foreground="#7D88FF" FontSize="9" FontWeight="SemiBold" LetterSpacing="1" />
+              </Border>
             </Grid>
-          </Border>
 
-          <StackPanel Grid.Column="1" Spacing="18">
-            <Border Classes="panel" Padding="20">
-              <StackPanel Spacing="16">
-                <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Text="Выбранный профиль" Foreground="#F0F2F5" FontSize="15" FontWeight="SemiBold" />
+            <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="17">
+              <Button x:Name="ConnectButton" Classes="connect" Click="Connect_Click" IsEnabled="False" AutomationProperties.Name="Подключить">
+                <Grid Width="152" Height="152">
+                  <Ellipse Fill="#141829" Stroke="#4962FF" StrokeThickness="2" />
+                  <Ellipse Margin="12" Fill="#121627" Stroke="#2444C8FF" StrokeThickness="1" />
+                  <PathIcon Data="M12,2 A10,10 0 1 0 22,12 A10,10 0 0 0 12,2 M12,6 L12,13" Foreground="#DDE4FF" Width="54" Height="54" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Grid>
-                <Border Background="#11151B" CornerRadius="10" Padding="14">
-                  <Grid ColumnDefinitions="Auto,*,Auto">
-                    <Border Width="38" Height="38" CornerRadius="9" Background="#191E27"><TextBlock Text="VL" Foreground="#CAD0D9" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
-                    <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center"><TextBlock x:Name="ProfileNameText" Text="Профиль не импортирован" Foreground="#E6E9ED" FontSize="13"/><TextBlock x:Name="ProfileEndpointText" Text="VLESS Reality TCP" Foreground="#747C88" FontSize="10"/></StackPanel>
-                  </Grid>
-                </Border>
-              </StackPanel>
-            </Border>
+              </Button>
+              <TextBlock x:Name="ConnectHint" Text="Выберите или добавьте сервер" Foreground="#8B94A8" FontSize="12" />
+            </StackPanel>
 
-            <Border Classes="panel" Padding="20" Opacity="0.45" IsEnabled="False">
-              <StackPanel Spacing="14">
-                <TextBlock Text="Маршрутизация · позже" Foreground="#F0F2F5" FontSize="15" FontWeight="SemiBold" />
-                <StackPanel Spacing="9">
-                  <RadioButton Content="Оптимально для РФ" IsChecked="True" GroupName="route" />
-                  <RadioButton Content="Только заблокированные ресурсы" GroupName="route" />
-                  <RadioButton Content="Весь трафик через VPN" GroupName="route" />
-                </StackPanel>
-                <Border Background="#111827" CornerRadius="8" Padding="11"><TextBlock Text="Банки и локальные сервисы остаются напрямую" Foreground="#8D98AB" FontSize="10" TextWrapping="Wrap"/></Border>
-              </StackPanel>
-            </Border>
-          </StackPanel>
-        </Grid>
+            <Grid Grid.Row="2" ColumnDefinitions="*,*,*" ColumnSpacing="10">
+              <Border Classes="metric"><StackPanel><TextBlock Text="ПРОКСИ" Classes="eyebrow"/><TextBlock Text="127.0.0.1:10808" Classes="metricValue"/></StackPanel></Border>
+              <Border Grid.Column="1" Classes="metric"><StackPanel><TextBlock Text="ПРОТОКОЛ" Classes="eyebrow"/><TextBlock x:Name="SelectedProtocolText" Text="—" Classes="metricValue"/></StackPanel></Border>
+              <Border Grid.Column="2" Classes="metric"><StackPanel><TextBlock Text="ЗАДЕРЖКА" Classes="eyebrow"/><TextBlock x:Name="SelectedLatencyText" Text="—" Classes="metricValue"/></StackPanel></Border>
+            </Grid>
+          </Grid>
+        </Border>
 
-        <Border Grid.Row="2" Classes="panel" Margin="0,18,0,0" Padding="18">
-          <Grid ColumnDefinitions="Auto,*,Auto">
-            <TextBlock Text="События" Foreground="#E4E7EB" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <TextBlock x:Name="EventText" Grid.Column="1" Margin="18,0" Text="Импортируйте VLESS Reality TCP URI. Системный прокси и TUN пока не меняются." Foreground="#757E8B" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
-            <TextBlock Grid.Column="2" Text="sing-box" Foreground="#636B76" FontSize="10" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Classes="panel" Padding="20">
+          <Grid RowDefinitions="Auto,*">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="3">
+                <TextBlock Text="Серверы" Foreground="#F2F4FA" FontSize="17" FontWeight="SemiBold" />
+                <TextBlock x:Name="ServerCountText" Text="0 сохранено" Foreground="#727C92" FontSize="11" />
+              </StackPanel>
+              <TextBlock Grid.Column="1" Text="TCP reachability" Foreground="#586178" FontSize="10" VerticalAlignment="Center" />
+            </Grid>
+            <ListBox x:Name="ServersList" Grid.Row="1" Margin="0,16,0,0" Background="Transparent" BorderThickness="0" SelectionChanged="ServersList_SelectionChanged">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="local:ServerRow">
+                  <Border Classes="serverRow" Margin="0,0,0,8" Padding="14">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                      <Border Width="42" Height="42" CornerRadius="13" Background="#172038" BorderBrush="#246C79FF" BorderThickness="1">
+                        <TextBlock Text="{Binding ProtocolCode}" Foreground="#AEB8FF" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Border>
+                      <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="{Binding Name}" Foreground="#E8EBF5" FontSize="13" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Endpoint}" Foreground="#6F7A92" FontSize="10" />
+                        <TextBlock Text="{Binding ProtocolLabel}" Foreground="#7786E8" FontSize="9" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="2">
+                        <TextBlock Text="{Binding LatencyText}" Foreground="#A9E7CE" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right" />
+                        <TextBlock Text="{Binding CheckedText}" Foreground="#596276" FontSize="9" HorizontalAlignment="Right" />
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
           </Grid>
         </Border>
       </Grid>
-    </ScrollViewer>
+
+      <Border Grid.Row="2" Classes="eventPanel" Margin="0,18,0,0" Padding="16,13">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <Ellipse Width="7" Height="7" Fill="#6880FF" VerticalAlignment="Center" />
+          <TextBlock x:Name="EventText" Grid.Column="1" Margin="12,0" Text="Добавьте VLESS Reality, NaiveProxy или Mieru сервер." Foreground="#808A9F" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Grid.Column="2" Text="MaxSpeedVPN Core" Foreground="#4E586E" FontSize="9" VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+    </Grid>
   </Grid>
 
   <Window.Styles>
-    <Style Selector="Border.nav"><Setter Property="Padding" Value="13,11"/><Setter Property="CornerRadius" Value="8"/></Style>
-    <Style Selector="Border.nav:pointerover"><Setter Property="Background" Value="#0FFFFFFF"/></Style>
-    <Style Selector="Border.nav.active"><Setter Property="Background" Value="#19172A"/></Style>
-    <Style Selector="Border.panel"><Setter Property="Background" Value="#0D1015"/><Setter Property="BorderBrush" Value="#16FFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="14"/></Style>
-    <Style Selector="Border.metric"><Setter Property="Background" Value="#101319"/><Setter Property="CornerRadius" Value="9"/><Setter Property="Padding" Value="13"/></Style>
-    <Style Selector="TextBlock.label"><Setter Property="Foreground" Value="#626B78"/><Setter Property="FontSize" Value="9"/><Setter Property="LetterSpacing" Value="1.2"/></Style>
-    <Style Selector="TextBlock.value"><Setter Property="Foreground" Value="#CDD2D9"/><Setter Property="FontSize" Value="12"/><Setter Property="Margin" Value="0,5,0,0"/></Style>
-    <Style Selector="Button.ghost"><Setter Property="Background" Value="#0FFFFFFF"/><Setter Property="Foreground" Value="#C8CDD5"/><Setter Property="BorderBrush" Value="#1FFFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="14,9"/></Style>
-    <Style Selector="Button.connect"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="0"/><Setter Property="CornerRadius" Value="80"/></Style>
+    <Style Selector="Border.panel"><Setter Property="Background" Value="#C40B0E17"/><Setter Property="BorderBrush" Value="#24FFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="20"/></Style>
+    <Style Selector="Border.metric"><Setter Property="Background" Value="#111522"/><Setter Property="BorderBrush" Value="#16FFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="13"/></Style>
+    <Style Selector="Border.serverRow"><Setter Property="Background" Value="#B510141F"/><Setter Property="BorderBrush" Value="#18FFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="14"/></Style>
+    <Style Selector="Border.serverRow:pointerover"><Setter Property="Background" Value="#192035"/><Setter Property="BorderBrush" Value="#386C79FF"/></Style>
+    <Style Selector="Border.eventPanel"><Setter Property="Background" Value="#9A0B0E16"/><Setter Property="BorderBrush" Value="#18FFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="14"/></Style>
+    <Style Selector="TextBlock.eyebrow"><Setter Property="Foreground" Value="#626D86"/><Setter Property="FontSize" Value="9"/><Setter Property="LetterSpacing" Value="1.4"/></Style>
+    <Style Selector="TextBlock.metricValue"><Setter Property="Foreground" Value="#D7DBE7"/><Setter Property="FontSize" Value="11"/><Setter Property="Margin" Value="0,5,0,0"/></Style>
+    <Style Selector="Button.primary"><Setter Property="Background" Value="#566BFF"/><Setter Property="Foreground" Value="White"/><Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="16,10"/></Style>
+    <Style Selector="Button.secondary"><Setter Property="Background" Value="#101521"/><Setter Property="Foreground" Value="#C4CAD8"/><Setter Property="BorderBrush" Value="#2BFFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="15,9"/></Style>
+    <Style Selector="ToggleButton.live"><Setter Property="Background" Value="#101521"/><Setter Property="Foreground" Value="#C4CAD8"/><Setter Property="BorderBrush" Value="#2BFFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="15,9"/></Style>
+    <Style Selector="ToggleButton.live:checked"><Setter Property="Background" Value="#19392D"/><Setter Property="Foreground" Value="#A9E7CE"/><Setter Property="BorderBrush" Value="#2D8968"/></Style>
+    <Style Selector="Button.connect"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="0"/><Setter Property="CornerRadius" Value="90"/></Style>
     <Style Selector="Button.connect:pointerover"><Setter Property="Opacity" Value="0.9"/></Style>
-    <Style Selector="RadioButton"><Setter Property="Foreground" Value="#AAB1BC"/><Setter Property="FontSize" Value="12"/></Style>
+    <Style Selector="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="Background" Value="Transparent"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
+    <Style Selector="ListBoxItem:selected"><Setter Property="Background" Value="Transparent"/></Style>
   </Window.Styles>
 </Window>

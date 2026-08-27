@@ -1,0 +1,17 @@
+<node>
+  <interface name="site.envywook.MaxSpeedVPN.Network1">
+    <method name="StartTun">
+      <arg name="session_id" type="s" direction="in"/>
+      <arg name="server_address" type="s" direction="in"/>
+      <arg name="server_port" type="q" direction="in"/>
+      <arg name="local_uid" type="u" direction="in"/>
+    </method>
+    <method name="StopTun">
+      <arg name="session_id" type="s" direction="in"/>
+    </method>
+    <method name="GetStatus">
+      <arg name="session_id" type="s" direction="in"/>
+      <arg name="active" type="b" direction="out"/>
+    </method>
+  </interface>
+</node>

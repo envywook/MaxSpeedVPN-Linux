@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -7,54 +9,95 @@ namespace MaxSpeedVPN.Desktop;
 
 public partial class MainWindow : Window
 {
-    private readonly ConnectionController _controller;
-    private readonly SingBoxRuntime _runtime;
+    private ConnectionController? _controller;
+    private IAsyncDisposable? _activeRuntime;
+    private readonly ProfileStore _profileStore;
+    private readonly LiveLatencyMonitor _latencyMonitor;
     private readonly string _enginePath;
-    private VpnProfile? _profile;
+    private readonly string _mieruPath;
+    private readonly ObservableCollection<ServerRow> _servers = [];
+    private IReadOnlyList<StoredProfile> _profiles = [];
+    private StoredProfile? _selected;
     private bool _shutdownStarted;
 
     public MainWindow()
     {
         InitializeComponent();
-        _enginePath = ResolveEnginePath();
-        _runtime = CreateRuntime(_enginePath);
-        _controller = new ConnectionController(_runtime);
-        _controller.StateChanged += state => Avalonia.Threading.Dispatcher.UIThread.Post(() => RenderState(state));
+        _enginePath = ResolveBundled("sing-box");
+        _mieruPath = ResolveBundled("mieru");
+        _profileStore = new ProfileStore(Path.Combine(AppPaths.DataDirectory(), "profiles"));
+        _latencyMonitor = new LiveLatencyMonitor(new TcpLatencyProbe(), TimeSpan.FromSeconds(5));
+        _latencyMonitor.Updated += snapshot => Avalonia.Threading.Dispatcher.UIThread.Post(() => RenderLatencies(snapshot));
+        ServersList.ItemsSource = _servers;
+        Opened += OnOpened;
         Closing += OnClosing;
         RenderEngineStatus();
     }
 
-    private static string ResolveEnginePath()
+    private static string ResolveBundled(string name)
     {
-        var bundled = Path.Combine(AppContext.BaseDirectory, "bin", "sing-box");
-        return File.Exists(bundled) ? bundled : "/usr/bin/sing-box";
+        var bundled = Path.Combine(AppContext.BaseDirectory, "bin", name);
+        if (File.Exists(bundled)) return bundled;
+        return name == "sing-box" ? "/usr/bin/sing-box" : "/usr/bin/mieru";
     }
 
-    private static SingBoxRuntime CreateRuntime(string executable)
+
+    private async void OnOpened(object? sender, EventArgs e)
     {
-        var runtimeDirectory = Path.Combine(AppPaths.DataDirectory(), "runtime");
-        return new SingBoxRuntime(executable, runtimeDirectory, new SingBoxConfigWriter());
+        await ReloadProfilesAsync();
+        await _latencyMonitor.StartAsync(() => _profiles);
+        LivePingToggle.IsChecked = true;
     }
 
     private void RenderEngineStatus()
     {
-        var available = File.Exists(_enginePath);
-        EngineStatusText.Text = available ? "Движок доступен" : "Движок не найден";
-        EngineStatusText.Foreground = Brush.Parse(available ? "#A9EBC9" : "#E8A7A7");
-        EngineDot.Fill = Brush.Parse(available ? "#37D17E" : "#D75A5A");
+        var singBox = File.Exists(_enginePath);
+        var mieru = File.Exists(_mieruPath);
+        EngineStatusText.Text = singBox ? (mieru ? "Движки готовы" : "sing-box готов") : "sing-box не найден";
+        EngineStatusText.Foreground = Brush.Parse(singBox ? "#A9EBC9" : "#FF9AAB");
+        EngineDot.Fill = Brush.Parse(singBox ? "#42D791" : "#FF6378");
         UpdateConnectAvailability();
-        if (!available)
-            EventText.Text = "sing-box не найден. Переустановите полный пакет MaxSpeedVPN.";
+    }
+
+    private async Task ReloadProfilesAsync(string? selectId = null)
+    {
+        _profiles = await _profileStore.LoadAsync();
+        var current = selectId ?? _selected?.Id;
+        _servers.Clear();
+        foreach (var profile in _profiles) _servers.Add(ServerRow.From(profile));
+        ServerCountText.Text = $"{_profiles.Count} сохранено";
+        if (_profiles.Count == 0)
+        {
+            _selected = null;
+            SelectedProtocolText.Text = "—";
+            SelectedLatencyText.Text = "—";
+            return;
+        }
+        var index = Math.Max(0, _profiles.ToList().FindIndex(profile => profile.Id == current));
+        ServersList.SelectedIndex = index;
     }
 
     private async void Connect_Click(object? sender, RoutedEventArgs e)
     {
         try
         {
-            if (_controller.State == ConnectionState.Connected)
+            if (_controller?.State == ConnectionState.Connected)
+            {
                 await _controller.DisconnectAsync();
-            else if (_profile is not null)
-                await _controller.ConnectAsync(_profile);
+                return;
+            }
+            if (_selected is null) return;
+            if (_selected.Protocol == "mieru")
+            {
+                EventText.Text = "Mieru импортирован, но нативный runtime в этом alpha пока не запускается: нужен отдельный lifecycle smoke.";
+                return;
+            }
+            if (_activeRuntime is not null) await _activeRuntime.DisposeAsync();
+            var runtime = new StoredSingBoxRuntime(_enginePath, Path.Combine(AppPaths.DataDirectory(), "runtime"), _selected);
+            _activeRuntime = runtime;
+            _controller = new ConnectionController(runtime);
+            _controller.StateChanged += state => Avalonia.Threading.Dispatcher.UIThread.Post(() => RenderState(state));
+            await runtime.StartAsync();
         }
         catch (Exception exception)
         {
@@ -77,23 +120,71 @@ public partial class MainWindow : Window
         ImportOverlay.IsVisible = false;
     }
 
-    private void ConfirmImport_Click(object? sender, RoutedEventArgs e)
+    private async void ConfirmImport_Click(object? sender, RoutedEventArgs e)
     {
         try
         {
-            _profile = new ProfileParser().Parse(ProfileUriTextBox.Text?.Trim() ?? string.Empty);
-            ProfileNameText.Text = _profile.Name;
-            ProfileEndpointText.Text = $"{_profile.Host}:{_profile.Port} · Reality TCP";
-            EventText.Text = "Профиль принят только для текущего запуска. Нажмите подключить и настройте приложение на 127.0.0.1:10808.";
+            var profile = new ProfileParser().ParseStored(ProfileUriTextBox.Text?.Trim() ?? string.Empty);
+            await _profileStore.UpsertAsync(profile);
+            await ReloadProfilesAsync(profile.Id);
+            EventText.Text = $"{profile.Name} сохранён как {profile.ProtocolLabel}, без ярлыка Custom.";
             ProfileUriTextBox.Text = string.Empty;
             ImportOverlay.IsVisible = false;
-            UpdateConnectAvailability();
+            await PingAllAsync();
         }
-        catch (FormatException exception)
+        catch (Exception exception) when (exception is FormatException or IOException)
         {
             ImportErrorText.Text = exception.Message;
             ImportErrorText.IsVisible = true;
         }
+    }
+
+    private void ServersList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (ServersList.SelectedIndex < 0 || ServersList.SelectedIndex >= _profiles.Count) return;
+        _selected = _profiles[ServersList.SelectedIndex];
+        SelectedProtocolText.Text = _selected.ProtocolLabel;
+        ModeBadgeText.Text = _selected.Protocol == "mieru" ? "NATIVE CORE" : "LOCAL PROXY";
+        ConnectHint.Text = _selected.Protocol == "vless" ? "Запустить локальный прокси" : $"{_selected.ProtocolLabel}: capability check";
+        var row = _servers.FirstOrDefault(item => item.Id == _selected.Id);
+        SelectedLatencyText.Text = row?.LatencyText ?? "—";
+        UpdateConnectAvailability();
+    }
+
+    private async void PingAll_Click(object? sender, RoutedEventArgs e) => await PingAllAsync();
+
+    private async Task PingAllAsync()
+    {
+        PingAllButton.IsEnabled = false;
+        try
+        {
+            EventText.Text = "Проверяем доступность всех серверов…";
+            await _latencyMonitor.RefreshAsync(_profiles);
+            EventText.Text = "Пинг всех серверов обновлён.";
+        }
+        finally { PingAllButton.IsEnabled = true; }
+    }
+
+    private async void LivePingToggle_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (LivePingToggle.IsChecked == true)
+        {
+            await _latencyMonitor.StartAsync(() => _profiles);
+            EventText.Text = "Live ping включён: проверка каждые 5 секунд, пока приложение открыто.";
+        }
+        else
+        {
+            await _latencyMonitor.StopAsync();
+            EventText.Text = "Live ping остановлен.";
+        }
+    }
+
+    private void RenderLatencies(IReadOnlyDictionary<string, LatencyResult> snapshot)
+    {
+        foreach (var row in _servers)
+            if (snapshot.TryGetValue(row.Id, out var latency)) row.Update(latency);
+        if (_selected is not null && snapshot.TryGetValue(_selected.Id, out var selected))
+            SelectedLatencyText.Text = selected.IsReachable ? $"{selected.Milliseconds} ms" : "timeout";
     }
 
     private void RenderState(ConnectionState state)
@@ -102,7 +193,7 @@ public partial class MainWindow : Window
         {
             ConnectionState.Preparing => "Подготовка",
             ConnectionState.Connecting => "Запуск прокси…",
-            ConnectionState.Connected => "Локальный прокси активен",
+            ConnectionState.Connected => "Прокси активен",
             ConnectionState.Disconnecting => "Отключение…",
             ConnectionState.Error => "Ошибка движка",
             _ => "Не подключено"
@@ -111,25 +202,62 @@ public partial class MainWindow : Window
         UpdateConnectAvailability();
         EventText.Text = state switch
         {
-            ConnectionState.Connected => "Локальный SOCKS/HTTP прокси слушает 127.0.0.1:10808. Системный трафик автоматически не перенаправляется.",
-            ConnectionState.Disconnected => "Локальный прокси остановлен, дочерний процесс завершён.",
-            ConnectionState.Error => _controller.ErrorMessage ?? "sing-box неожиданно остановился.",
-            _ => "Запускаем внешний sing-box и проверяем локальный listener…"
+            ConnectionState.Connected => "SOCKS/HTTP proxy слушает 127.0.0.1:10808. TUN не включается без проверенного privileged helper.",
+            ConnectionState.Disconnected => "Прокси остановлен, дочерний процесс завершён.",
+            ConnectionState.Error => _controller?.ErrorMessage ?? "sing-box неожиданно остановился.",
+            _ => "Запускаем sing-box и проверяем listener…"
         };
     }
 
     private void UpdateConnectAvailability()
     {
-        var busy = _controller.State is ConnectionState.Preparing or ConnectionState.Connecting or ConnectionState.Disconnecting;
-        ConnectButton.IsEnabled = !busy && File.Exists(_enginePath) && (_profile is not null || _controller.State == ConnectionState.Connected);
+        var busy = _controller?.State is ConnectionState.Preparing or ConnectionState.Connecting or ConnectionState.Disconnecting;
+        ConnectButton.IsEnabled = !busy && _selected is not null && (_selected.Protocol != "vless" || File.Exists(_enginePath));
     }
 
-    private async void OnClosing(object? sender, WindowClosingEventArgs e)
+    public void ShowFromTray()
+    {
+        Show();
+        Activate();
+    }
+
+    private void OnClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (!_shutdownStarted)
+        {
+            e.Cancel = true;
+            Hide();
+            EventText.Text = "MaxSpeedVPN продолжает работать в трее.";
+        }
+    }
+
+    public async Task ShutdownAsync()
     {
         if (_shutdownStarted) return;
-        e.Cancel = true;
         _shutdownStarted = true;
-        try { await _runtime.DisposeAsync(); }
-        finally { Close(); }
+        await _latencyMonitor.DisposeAsync();
+        if (_activeRuntime is not null) await _activeRuntime.DisposeAsync();
+        Closing -= OnClosing;
+        Close();
+    }
+}
+
+public sealed class ServerRow : System.ComponentModel.INotifyPropertyChanged
+{
+    public required string Id { get; init; }
+    public required string Name { get; init; }
+    public required string Endpoint { get; init; }
+    public required string ProtocolLabel { get; init; }
+    public string ProtocolCode => ProtocolLabel switch { "VLESS Reality" => "VR", "NaiveProxy" => "NP", "Mieru" => "MR", _ => "PX" };
+    private string _latencyText = "—";
+    private string _checkedText = "не проверен";
+    public string LatencyText { get => _latencyText; private set { _latencyText = value; PropertyChanged?.Invoke(this, new(nameof(LatencyText))); } }
+    public string CheckedText { get => _checkedText; private set { _checkedText = value; PropertyChanged?.Invoke(this, new(nameof(CheckedText))); } }
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    public static ServerRow From(StoredProfile profile) => new() { Id = profile.Id, Name = profile.Name, Endpoint = $"{profile.Host}:{profile.Port}", ProtocolLabel = profile.ProtocolLabel };
+    public void Update(LatencyResult latency)
+    {
+        LatencyText = latency.IsReachable ? $"{latency.Milliseconds} ms" : "timeout";
+        CheckedText = latency.CheckedAt.ToLocalTime().ToString("HH:mm:ss");
     }
 }

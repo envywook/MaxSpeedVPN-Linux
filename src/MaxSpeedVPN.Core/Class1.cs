@@ -24,6 +24,19 @@ public sealed record VpnProfile(
 
 public sealed class ProfileParser
 {
+    public StoredProfile ParseStored(string value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            throw new FormatException("Profile URI is invalid.");
+        if (string.Equals(uri.Scheme, "vless", StringComparison.OrdinalIgnoreCase))
+            return StoredProfile.FromVpnProfile(Parse(value)) with { SourceUri = value };
+        if (string.Equals(uri.Scheme, "naive+https", StringComparison.OrdinalIgnoreCase))
+            return ParseNaive(uri, value);
+        if (string.Equals(uri.Scheme, "mierus", StringComparison.OrdinalIgnoreCase))
+            return ParseMieru(uri, value);
+        throw new FormatException("Supported profiles: VLESS Reality, NaiveProxy and Mieru.");
+    }
+
     public VpnProfile Parse(string value)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "vless")
@@ -65,15 +78,71 @@ public sealed class ProfileParser
             ShortId: query.GetValueOrDefault("sid", string.Empty));
     }
 
+    private static StoredProfile ParseNaive(Uri uri, string source)
+    {
+        if (string.IsNullOrWhiteSpace(uri.UserInfo) || string.IsNullOrWhiteSpace(uri.Host) || uri.Port <= 0)
+            throw new FormatException("NaiveProxy profile is missing credentials, host or port.");
+        var credentials = uri.UserInfo.Split(':', 2);
+        if (credentials.Length != 2 || credentials.Any(string.IsNullOrWhiteSpace))
+            throw new FormatException("NaiveProxy username and password are required.");
+        var name = Uri.UnescapeDataString(uri.Fragment.TrimStart('#'));
+        if (string.IsNullOrWhiteSpace(name)) name = uri.Host;
+        return new StoredProfile(
+            $"naive:{uri.Host}:{uri.Port}", name, "naive", "NaiveProxy", uri.Host, uri.Port,
+            RuntimeProfile: null, SourceUri: source,
+            Username: Uri.UnescapeDataString(credentials[0]), Password: Uri.UnescapeDataString(credentials[1]),
+            Transport: "HTTPS");
+    }
+
+    private static StoredProfile ParseMieru(Uri uri, string source)
+    {
+        if (string.IsNullOrWhiteSpace(uri.UserInfo) || string.IsNullOrWhiteSpace(uri.Host))
+            throw new FormatException("Mieru profile is missing credentials or host.");
+        var credentials = uri.UserInfo.Split(':', 2);
+        if (credentials.Length != 2 || credentials.Any(string.IsNullOrWhiteSpace))
+            throw new FormatException("Mieru username and password are required.");
+        var query = ParseQueryMulti(uri.Query);
+        var profileName = query.GetValueOrDefault("profile")?.SingleOrDefault();
+        var ports = query.GetValueOrDefault("port") ?? [];
+        var protocols = query.GetValueOrDefault("protocol") ?? [];
+        if (string.IsNullOrWhiteSpace(profileName) || ports.Count == 0 || ports.Count != protocols.Count)
+            throw new FormatException("Mieru profile requires profile and matching port/protocol values.");
+        if (!int.TryParse(ports[0], out var port) || port is < 1 or > 65535)
+            throw new FormatException("Mieru first port must be a single valid port.");
+        var protocol = protocols[0].ToUpperInvariant();
+        if (protocol is not ("TCP" or "UDP")) throw new FormatException("Mieru protocol must be TCP or UDP.");
+        return new StoredProfile(
+            $"mieru:{uri.Host}:{port}", profileName, "mieru", "Mieru", uri.Host, port,
+            RuntimeProfile: null, SourceUri: source,
+            Username: Uri.UnescapeDataString(credentials[0]), Password: Uri.UnescapeDataString(credentials[1]),
+            Transport: protocol);
+    }
+
     private static Dictionary<string, string> ParseQuery(string value)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, itemValue) in ParseQueryItems(value)) result[key] = itemValue;
+        return result;
+    }
+
+    private static Dictionary<string, List<string>> ParseQueryMulti(string value)
+    {
+        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, itemValue) in ParseQueryItems(value))
+        {
+            if (!result.TryGetValue(key, out var values)) result[key] = values = [];
+            values.Add(itemValue);
+        }
+        return result;
+    }
+
+    private static IEnumerable<(string Key, string Value)> ParseQueryItems(string value)
+    {
         foreach (var item in value.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
         {
             var pair = item.Split('=', 2);
-            result[Uri.UnescapeDataString(pair[0])] = pair.Length == 2 ? Uri.UnescapeDataString(pair[1]) : string.Empty;
+            yield return (Uri.UnescapeDataString(pair[0]), pair.Length == 2 ? Uri.UnescapeDataString(pair[1]) : string.Empty);
         }
-        return result;
     }
 
     private static bool IsBase64Url(string? value, int minimumLength) =>
@@ -125,6 +194,45 @@ public sealed class SingBoxConfigWriter : ICoreConfigWriter
         startInfo.ArgumentList.Add("-c");
         startInfo.ArgumentList.Add(configPath);
     }
+
+    public string Write(StoredProfile profile, int localPort, bool enableTun)
+    {
+        object outbound = profile.Protocol switch
+        {
+            "vless" when profile.RuntimeProfile is not null => CreateVlessOutbound(profile.RuntimeProfile),
+            "naive" => new
+            {
+                type = "naive", tag = "vpn", server = profile.Host, server_port = profile.Port,
+                username = profile.Username, password = profile.Password,
+                tls = new { enabled = true, server_name = profile.Host }
+            },
+            _ => throw new NotSupportedException($"{profile.ProtocolLabel} requires its native runtime.")
+        };
+        var inbounds = new List<object>
+        {
+            new { type = "mixed", tag = "local-proxy", listen = "127.0.0.1", listen_port = localPort }
+        };
+        if (enableTun)
+            inbounds.Add(new { type = "tun", tag = "tun-in", interface_name = "maxspeed0", address = new[] { "172.19.0.1/30" }, auto_route = true, strict_route = true, stack = "system" });
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            log = new { level = "info", timestamp = true },
+            inbounds,
+            outbounds = new object[] { outbound, new { type = "direct", tag = "direct" } },
+            route = new { final = "vpn", auto_detect_interface = true }
+        }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private static object CreateVlessOutbound(VpnProfile profile) => new
+    {
+        type = "vless", tag = "vpn", server = profile.Host, server_port = profile.Port, uuid = profile.UserId,
+        tls = new
+        {
+            enabled = true, server_name = profile.ServerName,
+            utls = new { enabled = true, fingerprint = profile.Fingerprint },
+            reality = new { enabled = profile.Security == "reality", public_key = profile.PublicKey, short_id = profile.ShortId }
+        }
+    };
 }
 
 public sealed class XrayConfigWriter : ICoreConfigWriter
@@ -423,10 +531,303 @@ public sealed class SingBoxRuntime : ExternalCoreRuntime
         : base(executable, runtimeDirectory, configWriter, "sing-box", localPort, startupTimeout) { }
 }
 
+public sealed class StoredSingBoxConfigWriter(StoredProfile profile, bool enableTun = false) : ICoreConfigWriter
+{
+    private readonly SingBoxConfigWriter _writer = new();
+    public string Write(VpnProfile ignored, int localPort) => _writer.Write(profile, localPort, enableTun);
+    public void AddRunArguments(System.Diagnostics.ProcessStartInfo startInfo, string configPath) => _writer.AddRunArguments(startInfo, configPath);
+}
+
+public sealed class StoredSingBoxRuntime : ExternalCoreRuntime
+{
+    private readonly VpnProfile _placeholder;
+    public StoredSingBoxRuntime(string executable, string runtimeDirectory, StoredProfile profile, bool enableTun = false, int localPort = 10808, TimeSpan? startupTimeout = null)
+        : base(executable, runtimeDirectory, new StoredSingBoxConfigWriter(profile, enableTun), "sing-box", localPort, startupTimeout)
+    {
+        _placeholder = profile.RuntimeProfile ?? new VpnProfile(profile.Id, profile.Name, profile.Host, profile.Port, "00000000-0000-0000-0000-000000000000", "none", profile.Host, "chrome", "", "");
+    }
+    public Task StartAsync(CancellationToken cancellationToken = default) => base.StartAsync(_placeholder, cancellationToken);
+}
+
 public sealed class XrayRuntime : ExternalCoreRuntime
 {
     public XrayRuntime(string executable, string runtimeDirectory, XrayConfigWriter configWriter, int localPort = 10808, TimeSpan? startupTimeout = null)
         : base(executable, runtimeDirectory, configWriter, "Xray", localPort, startupTimeout) { }
+}
+
+public static class MieruRuntimeAdapter
+{
+    public static MieruRuntimeSpec Create(string executable, StoredProfile profile, string runtimeDirectory, int localPort)
+    {
+        if (profile.Protocol != "mieru") throw new NotSupportedException("Profile is not Mieru.");
+        if (!File.Exists(executable)) throw new FileNotFoundException("Mieru client is not installed.", executable);
+        var configPath = Path.Combine(runtimeDirectory, "mieru-client.json");
+        var addressField = System.Net.IPAddress.TryParse(profile.Host, out _) ? "ipAddress" : "domainName";
+        var server = new Dictionary<string, object>
+        {
+            [addressField] = profile.Host,
+            ["portBindings"] = new object[] { new { port = profile.Port, protocol = profile.Transport } }
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            profiles = new object[]
+            {
+                new
+                {
+                    profileName = profile.Name,
+                    user = new { name = profile.Username, password = profile.Password },
+                    servers = new object[] { server }
+                }
+            },
+            activeProfile = profile.Name,
+            rpcPort = localPort + 1,
+            socks5Port = localPort,
+            loggingLevel = "INFO",
+            socks5ListenLAN = false
+        }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        return new MieruRuntimeSpec(executable, configPath, json);
+    }
+}
+
+public sealed record MieruRuntimeSpec(string Executable, string ConfigPath, string ConfigJson);
+
+public sealed record StoredProfile(
+    string Id,
+    string Name,
+    string Protocol,
+    string ProtocolLabel,
+    string Host,
+    int Port,
+    VpnProfile? RuntimeProfile,
+    string SourceUri = "",
+    string Username = "",
+    string Password = "",
+    string Transport = "TCP")
+{
+    public static StoredProfile FromVpnProfile(VpnProfile profile) => new(
+        profile.Id,
+        profile.Name,
+        "vless",
+        string.Equals(profile.Security, "reality", StringComparison.OrdinalIgnoreCase) ? "VLESS Reality" : "VLESS",
+        profile.Host,
+        profile.Port,
+        profile);
+}
+
+public sealed class ProfileStore
+{
+    private readonly string _directory;
+    private readonly string _path;
+    private static readonly System.Text.Json.JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    public ProfileStore(string directory)
+    {
+        _directory = directory;
+        _path = Path.Combine(directory, "profiles.json");
+    }
+
+    public async Task<IReadOnlyList<StoredProfile>> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(_path)) return Array.Empty<StoredProfile>();
+        await using var stream = File.OpenRead(_path);
+        var profiles = await System.Text.Json.JsonSerializer.DeserializeAsync<List<StoredProfile>>(stream, JsonOptions, cancellationToken);
+        return profiles ?? new List<StoredProfile>();
+    }
+
+    public async Task UpsertAsync(StoredProfile profile, CancellationToken cancellationToken = default)
+    {
+        EnsurePrivateDirectory(_directory);
+        var profiles = (await LoadAsync(cancellationToken)).ToList();
+        var existing = profiles.FindIndex(item => string.Equals(item.Id, profile.Id, StringComparison.Ordinal));
+        if (existing >= 0) profiles[existing] = profile;
+        else profiles.Add(profile);
+        var tempPath = _path + ".tmp";
+        if (File.Exists(tempPath)) File.Delete(tempPath);
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            Options = FileOptions.Asynchronous
+        };
+        if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        await using (var stream = new FileStream(tempPath, options))
+            await System.Text.Json.JsonSerializer.SerializeAsync(stream, profiles, JsonOptions, cancellationToken);
+        File.Move(tempPath, _path, true);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(_path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+
+    private static void EnsurePrivateDirectory(string path)
+    {
+        Directory.CreateDirectory(path);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+}
+
+public sealed record LatencyResult(bool IsReachable, int? Milliseconds, DateTimeOffset CheckedAt);
+
+public interface ILatencyProbe
+{
+    Task<LatencyResult> MeasureAsync(string host, int port, CancellationToken cancellationToken = default);
+}
+
+public sealed class TcpLatencyProbe : ILatencyProbe
+{
+    private readonly TimeSpan _timeout;
+    public TcpLatencyProbe(TimeSpan? timeout = null) => _timeout = timeout ?? TimeSpan.FromSeconds(3);
+
+    public async Task<LatencyResult> MeasureAsync(string host, int port, CancellationToken cancellationToken = default)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_timeout);
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            using var client = new System.Net.Sockets.TcpClient();
+            await client.ConnectAsync(host, port, timeout.Token);
+            started.Stop();
+            return new LatencyResult(true, (int)Math.Max(1, started.ElapsedMilliseconds), DateTimeOffset.UtcNow);
+        }
+        catch (Exception exception) when (exception is System.Net.Sockets.SocketException or OperationCanceledException)
+        {
+            return new LatencyResult(false, null, DateTimeOffset.UtcNow);
+        }
+    }
+}
+
+public sealed class LiveLatencyMonitor : IAsyncDisposable
+{
+    private readonly ILatencyProbe _probe;
+    private readonly TimeSpan _interval;
+    private CancellationTokenSource? _loopCancellation;
+    private Task? _loop;
+    public event Action<IReadOnlyDictionary<string, LatencyResult>>? Updated;
+
+    public LiveLatencyMonitor(ILatencyProbe probe, TimeSpan? interval = null)
+    {
+        _probe = probe;
+        _interval = interval ?? TimeSpan.FromSeconds(5);
+    }
+
+    public async Task<IReadOnlyDictionary<string, LatencyResult>> RefreshAsync(IEnumerable<StoredProfile> profiles, CancellationToken cancellationToken = default)
+    {
+        var snapshot = profiles.ToArray();
+        var measurements = await Task.WhenAll(snapshot.Select(async profile =>
+            (profile.Id, Result: await _probe.MeasureAsync(profile.Host, profile.Port, cancellationToken))));
+        var result = measurements.ToDictionary(item => item.Id, item => item.Result, StringComparer.Ordinal);
+        Updated?.Invoke(result);
+        return result;
+    }
+
+    public Task StartAsync(Func<IReadOnlyList<StoredProfile>> profiles)
+    {
+        if (_loop is not null) return Task.CompletedTask;
+        _loopCancellation = new CancellationTokenSource();
+        var token = _loopCancellation.Token;
+        _loop = Task.Run(async () =>
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    await RefreshAsync(profiles(), token);
+                    await Task.Delay(_interval, token);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
+            }
+        }, token);
+        return Task.CompletedTask;
+    }
+
+    public async Task StopAsync()
+    {
+        var loop = _loop;
+        var cancellation = _loopCancellation;
+        _loop = null;
+        _loopCancellation = null;
+        if (loop is null || cancellation is null) return;
+        cancellation.Cancel();
+        try { await loop; }
+        catch (OperationCanceledException) { }
+        cancellation.Dispose();
+    }
+
+    public async ValueTask DisposeAsync() => await StopAsync();
+}
+
+public sealed record TunRequest(string InterfaceName, string Address, string ServerAddress, int ServerPort, int RoutingTable, int FirewallMark)
+{
+    public static TunRequest Create(string serverAddress, int serverPort)
+    {
+        if (!System.Net.IPAddress.TryParse(serverAddress, out _))
+            throw new ArgumentException("TUN endpoint must be a resolved IP address.", nameof(serverAddress));
+        if (serverPort is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(serverPort));
+        return new TunRequest("maxspeed0", "172.19.0.1/30", serverAddress, serverPort, 20298, 0x4D58);
+    }
+}
+
+public interface ITunExecutor
+{
+    Task AddTableAsync(TunRequest request, CancellationToken cancellationToken);
+    Task AddRuleAsync(TunRequest request, CancellationToken cancellationToken);
+    Task AddRouteAsync(TunRequest request, CancellationToken cancellationToken);
+    Task DeleteRouteAsync(TunRequest request, CancellationToken cancellationToken);
+    Task DeleteRuleAsync(TunRequest request, CancellationToken cancellationToken);
+    Task DeleteTableAsync(TunRequest request, CancellationToken cancellationToken);
+}
+
+public sealed class TunTransaction : IAsyncDisposable
+{
+    private readonly ITunExecutor _executor;
+    private readonly TunRequest _request;
+    private readonly List<Func<CancellationToken, Task>> _rollback = [];
+    private bool _disposed;
+
+    private TunTransaction(ITunExecutor executor, TunRequest request)
+    {
+        _executor = executor;
+        _request = request;
+    }
+
+    public static async Task<TunTransaction> ApplyAsync(ITunExecutor executor, TunRequest request, CancellationToken cancellationToken = default)
+    {
+        var transaction = new TunTransaction(executor, request);
+        try
+        {
+            await executor.AddTableAsync(request, cancellationToken);
+            transaction._rollback.Add(token => executor.DeleteTableAsync(request, token));
+            await executor.AddRuleAsync(request, cancellationToken);
+            transaction._rollback.Add(token => executor.DeleteRuleAsync(request, token));
+            await executor.AddRouteAsync(request, cancellationToken);
+            transaction._rollback.Add(token => executor.DeleteRouteAsync(request, token));
+            return transaction;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        await RollbackAsync(CancellationToken.None);
+    }
+
+    private async Task RollbackAsync(CancellationToken cancellationToken)
+    {
+        List<Exception>? errors = null;
+        for (var index = _rollback.Count - 1; index >= 0; index--)
+        {
+            try { await _rollback[index](cancellationToken); }
+            catch (Exception exception) { (errors ??= []).Add(exception); }
+        }
+        _rollback.Clear();
+        if (errors is not null) throw new AggregateException("TUN rollback failed.", errors);
+    }
 }
 
 public static class AppPaths

@@ -2,8 +2,20 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="MaxSpeedVPN.Desktop.App"
              RequestedThemeVariant="Dark">
-
-    <Application.Styles>
-        <FluentTheme />
-    </Application.Styles>
+  <Application.Styles>
+    <FluentTheme DensityStyle="Compact" />
+  </Application.Styles>
+  <TrayIcon.Icons>
+    <TrayIcons>
+      <TrayIcon Icon="avares://MaxSpeedVPN.Desktop/Assets/maxspeedvpn-tray.png" ToolTipText="MaxSpeedVPN" Clicked="Tray_Clicked">
+        <TrayIcon.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Открыть MaxSpeedVPN" Click="TrayOpen_Click" />
+            <NativeMenuItemSeparator />
+            <NativeMenuItem Header="Выйти" Click="TrayExit_Click" />
+          </NativeMenu>
+        </TrayIcon.Menu>
+      </TrayIcon>
+    </TrayIcons>
+  </TrayIcon.Icons>
 </Application>

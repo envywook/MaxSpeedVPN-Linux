@@ -1,0 +1,25 @@
+[Unit]
+Description=MaxSpeedVPN narrow TUN networking helper
+After=dbus.service
+
+[Service]
+Type=dbus
+BusName=site.envywook.MaxSpeedVPN
+ExecStart=/usr/lib/maxspeedvpn/maxspeedvpn-networkd
+User=root
+Group=root
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

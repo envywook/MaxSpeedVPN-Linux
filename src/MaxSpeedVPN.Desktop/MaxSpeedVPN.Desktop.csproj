@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/maxspeedvpn.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,5 +21,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MaxSpeedVPN.Core\MaxSpeedVPN.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
 </Project>
