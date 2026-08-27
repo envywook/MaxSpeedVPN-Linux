@@ -15,7 +15,7 @@ jobs:
   verify-build-package:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_tag }}
           submodules: recursive
@@ -111,7 +111,7 @@ jobs:
     steps:
       - name: Install checkout prerequisites
         run: pacman -Sy --noconfirm --needed git ca-certificates
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_tag }}
           submodules: recursive
@@ -131,7 +131,7 @@ jobs:
     needs: [verify-build-package, arch-package-smoke]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_tag }}
           fetch-depth: 0
