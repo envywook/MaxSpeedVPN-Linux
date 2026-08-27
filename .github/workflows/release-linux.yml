@@ -98,7 +98,7 @@ jobs:
           grep -q '/app/v2rayN$' "$RUNNER_TEMP/archive-contents.txt"
           (cd dist && sha256sum -c SHA256SUMS.txt)
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maxspeedvpn-linux-release
           path: dist/*
@@ -121,7 +121,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: bash scripts/arch-package-smoke.sh "$GITHUB_WORKSPACE" "$RELEASE_TAG" "$GITHUB_WORKSPACE/arch-dist"
       - name: Upload Arch package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maxspeedvpn-arch-package
           path: arch-dist/*.pkg.tar.zst
