@@ -10,7 +10,7 @@ makedepends=('dotnet-sdk>=10')
 options=('!strip' '!debug')
 _singbox_version=1.13.19
 _mieru_version=3.36.0
-_source_commit='88f56fbc659f8acc4c2941df774aac075995d890'
+_source_commit='038bc9de5f5786acf6ac7f6f24b3b3fe67222acf'
 source=(
   "maxspeedvpn-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/${_source_commit}.tar.gz"
   "sing-box-${_singbox_version}-linux-amd64.tar.gz::https://github.com/SagerNet/sing-box/releases/download/v${_singbox_version}/sing-box-${_singbox_version}-linux-amd64.tar.gz"
@@ -21,7 +21,7 @@ source=(
   "Noto-LICENSE::https://raw.githubusercontent.com/notofonts/noto-fonts/main/LICENSE"
 )
 sha256sums=(
-  '7e19d807978c99aec07197e02a2e4554779ef681614dda58a403b22bdfd07b9d'
+  'e04b4ed2ed0dd1db4ffd759d2c3ff4a13eb305ecc46bc291cb058a4b52d74c03'
   'ef88a9e577d474210867bd708933d042e9b70106529df2656182c9db90106aa1'
   '650d5e3b99a446fb38e820fa87a49562e0c79eab868fff58618ac487a58e554c'
   'b3f8b32a8b5728c01f31e33ff7a71b3b33f3fd8e1341684fcb98d5ecebb7db7a'
