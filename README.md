@@ -1,45 +1,77 @@
 # MaxSpeedVPN Linux
 
-Нативный клиент MaxSpeedVPN для Linux на базе [v2rayN](https://github.com/2dust/v2rayN), с приоритетной поддержкой Arch Linux.
+Самостоятельный Arch-first клиент MaxSpeedVPN на Avalonia/.NET. Это clean-room Linux-приложение: оно не использует код, сборки или архитектуру v2rayN.
 
-## Статус
+> **Статус 0.2.0 alpha:** текущий vertical slice поднимает локальный SOCKS/HTTP proxy на `127.0.0.1:10808`. Он пока не изменяет системный proxy, DNS или маршруты и не создаёт TUN-интерфейс.
 
-Ранняя разработка. Первый поддерживаемый target — Arch Linux x86_64, KDE Wayland/X11.
+## Что уже работает
 
-## Основные отличия
+- импорт VLESS Reality TCP URI;
+- генерация проверенных конфигураций для sing-box и Xray;
+- запуск core отдельным непривилегированным процессом;
+- readiness-проверка локального listener перед состоянием «подключено»;
+- корректный stop, обработка неожиданного завершения и cleanup временного конфига;
+- приватные XDG runtime-каталоги и файлы с правами только для пользователя;
+- собственный Avalonia UI без компонентов v2rayN;
+- воспроизводимый Arch Linux пакет с bundled sing-box `1.13.19` и локальным Noto Sans.
 
-- Xray и sing-box в одном клиенте;
-- журнал core и системных событий прямо на главном экране;
-- региональные пресеты маршрутизации для пользователей из РФ;
-- TUN, system proxy, split DNS и проектируемый fail-closed kill switch;
-- тёмный интерфейс Avalonia с регулируемой прозрачностью и непрозрачным fallback;
-- диагностика DNS, маршрутов, core и geo-data без вывода секретов;
-- безопасное восстановление сети после ошибки или аварийного завершения.
+## Чего пока нет
 
-Технические решения и критерии выпуска: [docs/MAXSPEEDVPN_LINUX_SPEC.md](docs/MAXSPEEDVPN_LINUX_SPEC.md).
+- TUN/VPN для всего устройства;
+- system proxy;
+- split routing и региональных пресетов;
+- kill switch, DNS/policy-routing rollback;
+- привилегированного D-Bus/Polkit helper;
+- выбора Xray в UI и bundled Xray binary.
 
-## Сборка для разработки
+Эти функции не имитируются в интерфейсе и появятся только вместе с узкой, rollback-safe системной интеграцией.
 
-Требуется .NET SDK 10.
+## Установка на Arch Linux
 
-```bash
-git submodule update --init --recursive
-cd v2rayN
-dotnet restore v2rayN.slnx
-dotnet build v2rayN.Desktop/v2rayN.Desktop.csproj
-```
-
-## Происхождение и лицензия
-
-Этот репозиторий является производной работой от v2rayN и распространяется по GPL-3.0. Сохранены исходные уведомления об авторских правах. Подробности: [LICENSE](LICENSE), [NOTICE](NOTICE) и [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-Права GPL на код не предоставляют право выдавать производную сборку за официальный продукт MaxSpeedVPN. Название, логотип, официальные домены, каналы обновлений и подписи релизов регулируются отдельно: [TRADEMARKS.md](TRADEMARKS.md).
-
-## Upstream
+Скачайте файл `maxspeedvpn-linux-0.2.0-1-x86_64.pkg.tar.zst` со страницы [Releases](https://github.com/envywook/MaxSpeedVPN-Linux/releases) и установите:
 
 ```bash
-git fetch upstream
-git rebase upstream/master
+sudo pacman -U ./maxspeedvpn-linux-0.2.0-1-x86_64.pkg.tar.zst
+maxspeedvpn
 ```
 
-Проект находится на ранней стадии и пока не предназначен для защиты реального трафика.
+После импорта профиля направьте приложение в локальный proxy `127.0.0.1:10808`.
+
+## Portable archive
+
+Portable-архив распаковывается без установки:
+
+```bash
+tar -xf maxspeedvpn-linux-0.2.0-x86_64.tar.zst
+./maxspeedvpn-linux-0.2.0-x86_64/maxspeedvpn
+```
+
+## Архитектура
+
+- `MaxSpeedVPN.Core` — профиль, строгий parser поддерживаемого VLESS subset, deterministic sing-box/Xray config и lifecycle внешнего core;
+- `MaxSpeedVPN.Desktop` — непривилегированный Avalonia GUI;
+- sing-box/Xray — только внешние процессы;
+- временный generated config хранится в пользовательском XDG runtime-каталоге и удаляется после остановки.
+
+Будущий `maxspeedvpn-networkd` будет отдельным минимальным root-helper через D-Bus/Polkit. Он не будет принимать arbitrary shell commands, raw nftables scripts, произвольные пути или core JSON.
+
+## Проверка
+
+Для разработки требуется .NET SDK 10:
+
+```bash
+dotnet run --project tests/MaxSpeedVPN.Tests/MaxSpeedVPN.Tests.csproj -c Release
+dotnet build MaxSpeedVPN.slnx -c Release
+```
+
+Перед `v0.2.0-alpha.1` прошли 14/14 тестов, реальные `sing-box check` и `xray run -test`, сборка Arch-пакета, установка через `pacman -U` и запуск установленного GUI под Xvfb.
+
+## Лицензия и бренд
+
+Исходный код этого standalone-клиента распространяется по [GPL-3.0-only](LICENSE). В пакет включаются внешние компоненты под их собственными лицензиями; см. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Тексты лицензий устанавливаются в `/usr/share/licenses/maxspeedvpn-linux/`.
+
+Название **MaxSpeedVPN**, официальный логотип, домены, каналы обновлений и подписи официальных релизов не предоставляются как часть GPL-лицензии на код. Производная сборка должна ясно обозначать независимое происхождение и не выдавать себя за официальный продукт MaxSpeedVPN; подробности — в [TRADEMARKS.md](TRADEMARKS.md).
+
+## Целевая платформа
+
+Сейчас поддерживается Arch Linux x86_64. Текущий alpha-релиз — честный локальный proxy MVP, а не полноценный system-wide VPN.

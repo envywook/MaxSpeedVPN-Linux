@@ -1,11 +1,9 @@
-# MaxSpeedVPN trademark and official-service policy
+# MaxSpeedVPN trademark and branding notice
 
-The GPL-3.0 license in `LICENSE` governs the covered source code. This policy does not limit rights granted by GPL-3.0 in that code.
+The GPL license in this repository applies to covered software code. It does not grant rights to use MaxSpeedVPN product branding in a way that implies an official release, endorsement, or affiliation.
 
-The names **MaxSpeedVPN**, official logos/icons/artwork, official domains, update feeds, signing identities, Telegram channels and operated subscription/API services identify the official project and are not licensed merely by receiving the source code.
+`MaxSpeedVPN`, the official logo and artwork, official domains, release-signing identity, update channels, support channels, and operated services are reserved separately by their respective owner.
 
-You may make truthful nominative references such as “based on MaxSpeedVPN Linux” or “compatible with MaxSpeedVPN”. A redistributed or modified build must not imply official affiliation. Unless separately authorized, it must use a distinct product name, application/package identifier, icon/artwork, update endpoint and signing identity.
+You may make truthful nominative references to MaxSpeedVPN and exercise all rights granted by the software license. A redistributed or modified build should use a distinct product name, icon/artwork, package identity, update endpoint, and signing identity, and should clearly identify itself as unofficial and independently maintained.
 
-No credentials, signing keys or right of access to official services are granted by this repository.
-
-This is a project policy, not legal advice. Enforceability and trademark registration depend on applicable law and should be reviewed by qualified counsel.
+This notice does not restrict modification or redistribution rights granted by GPL-3.0-only for covered code.

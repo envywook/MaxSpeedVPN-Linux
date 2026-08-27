@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MaxSpeedVPN.Core/MaxSpeedVPN.Core.csproj" />
+    <Project Path="src/MaxSpeedVPN.Desktop/MaxSpeedVPN.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MaxSpeedVPN.Tests/MaxSpeedVPN.Tests.csproj" />
+  </Folder>
+</Solution>
