@@ -21,6 +21,10 @@ import sys
 p=Path('PKGBUILD.smoke')
 s=p.read_text()
 s=s.replace('  "maxspeedvpn-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/${_source_commit}.tar.gz"', f'  "maxspeedvpn-local::file://{sys.argv[1]}"')
+lines=s.splitlines()
+checksum_index=lines.index('sha256sums=(') + 1
+lines[checksum_index]="  'SKIP'"
+s='\n'.join(lines) + '\n'
 s=s.replace("  local source_dir\n  source_dir=$(find \"$srcdir\" -maxdepth 1 -type d -name 'MaxSpeedVPN-Linux-*' -print -quit)\n  [[ -n \"$source_dir\" ]]\n  rm -rf \"$srcdir/app\"\n  mv \"$source_dir\" \"$srcdir/app\"", "  rm -rf \"$srcdir/app\"\n  mkdir \"$srcdir/app\"\n  tar -xzf \"$srcdir/maxspeedvpn-local\" -C \"$srcdir/app\"")
 p.write_text(s)
 PY
