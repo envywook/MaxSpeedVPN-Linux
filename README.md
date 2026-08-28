@@ -2,7 +2,7 @@
 
 Самостоятельный Arch-first клиент MaxSpeedVPN на Avalonia/.NET. Это clean-room Linux-приложение: оно не использует код, сборки или архитектуру v2rayN.
 
-> **Статус 0.3.0 alpha:** стабильный режим — локальный SOCKS/HTTP proxy на `127.0.0.1:10808`. TUN boundary и rollback уже покрыты тестами, но system-wide TUN намеренно не включён в пакет до rooted end-to-end проверки Polkit/D-Bus helper без утечек маршрутов и DNS.
+> **Статус 0.3.0 alpha:** VLESS Reality и NaiveProxy поднимают локальный SOCKS/HTTP proxy на `127.0.0.1:10808`. Mieru simple TCP пока можно импортировать и проверять по TCP, но Connect отключён до завершения app-owned lifecycle integration. TUN boundary и rollback покрыты unit-тестами, однако system-wide TUN не включён до реализации helper и rooted E2E без утечек маршрутов/DNS.
 
 ## Что работает
 
