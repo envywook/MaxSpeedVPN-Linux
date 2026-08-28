@@ -1,5 +1,5 @@
 pkgname=maxspeedvpn-linux
-pkgver=0.4.0
+pkgver=0.4.1
 pkgrel=1
 pkgdesc='Standalone MaxSpeedVPN multi-protocol proxy client for Linux'
 arch=('x86_64')
@@ -11,7 +11,7 @@ options=('!strip' '!debug')
 _singbox_version=1.13.19
 _mieru_version=3.36.0
 _xray_version=26.3.27
-_source_commit='af02c99e0ca0c5e7fac80f6bfea1cd02a300698c'
+_source_commit='83be49dbf0d549d64592212afca054d34083e9b3'
 source=(
   "maxspeedvpn-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/${_source_commit}.tar.gz"
   "sing-box-${_singbox_version}-linux-amd64.tar.gz::https://github.com/SagerNet/sing-box/releases/download/v${_singbox_version}/sing-box-${_singbox_version}-linux-amd64.tar.gz"
@@ -24,7 +24,7 @@ source=(
   "Noto-LICENSE::https://raw.githubusercontent.com/notofonts/noto-fonts/main/LICENSE"
 )
 sha256sums=(
-  '67afa22f676397fb401eeefd4e7c393db07de8dc78fef2860d0f25a9966984b7'
+  '8627960f978d86cb26a8711a59a58f0e5c8edd9521b745edd2a9b106d8b14a73'
   'ef88a9e577d474210867bd708933d042e9b70106529df2656182c9db90106aa1'
   '650d5e3b99a446fb38e820fa87a49562e0c79eab868fff58618ac487a58e554c'
   'b3f8b32a8b5728c01f31e33ff7a71b3b33f3fd8e1341684fcb98d5ecebb7db7a'
