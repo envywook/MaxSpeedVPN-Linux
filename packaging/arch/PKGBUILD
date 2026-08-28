@@ -11,7 +11,7 @@ options=('!strip' '!debug')
 _singbox_version=1.13.19
 _mieru_version=3.36.0
 _xray_version=26.3.27
-_source_commit='c395c67611f8e6ad58d3e5603c39cb22b3373d6a'
+_source_commit='af02c99e0ca0c5e7fac80f6bfea1cd02a300698c'
 source=(
   "maxspeedvpn-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/${_source_commit}.tar.gz"
   "sing-box-${_singbox_version}-linux-amd64.tar.gz::https://github.com/SagerNet/sing-box/releases/download/v${_singbox_version}/sing-box-${_singbox_version}-linux-amd64.tar.gz"
@@ -24,7 +24,7 @@ source=(
   "Noto-LICENSE::https://raw.githubusercontent.com/notofonts/noto-fonts/main/LICENSE"
 )
 sha256sums=(
-  '2b1814e171e5b203ab473a5bd24fff45a24dffa953b2251c67d29172526662ee'
+  '67afa22f676397fb401eeefd4e7c393db07de8dc78fef2860d0f25a9966984b7'
   'ef88a9e577d474210867bd708933d042e9b70106529df2656182c9db90106aa1'
   '650d5e3b99a446fb38e820fa87a49562e0c79eab868fff58618ac487a58e554c'
   'b3f8b32a8b5728c01f31e33ff7a71b3b33f3fd8e1341684fcb98d5ecebb7db7a'
