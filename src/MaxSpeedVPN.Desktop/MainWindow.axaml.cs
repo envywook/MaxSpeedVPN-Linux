@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
 using MaxSpeedVPN.Core;
 
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     private readonly CorePaths _corePaths;
     private readonly CoreSelector _coreSelector = new();
     private readonly SubscriptionClient _subscriptionClient = new();
+    private readonly SubscriptionParser _subscriptionParser = new();
     private readonly ObservableCollection<ServerRow> _servers = [];
     private readonly ObservableCollection<SubscriptionRow> _subscriptions = [];
     private IReadOnlyList<StoredProfile> _profiles = [];
@@ -64,7 +66,6 @@ public partial class MainWindow : Window
                 EventText.Text = "Устаревший региональный режим отключён: используется проверенный базовый маршрут.";
             }
             ApplySettingsToUi();
-            HwidTextBox.Text = await _hwidStore.GetOrCreateAsync();
             await ReloadProfilesAsync();
             await ReloadSubscriptionsAsync();
             if (_settings.AutoUpdateSubscriptions)
@@ -101,6 +102,8 @@ public partial class MainWindow : Window
         _subscriptions.Clear();
         foreach (var item in _subscriptionDefinitions) _subscriptions.Add(SubscriptionRow.From(item));
         SubscriptionCountText.Text = $"{_subscriptions.Count} добавлено";
+        EmptySubscriptionsState.IsVisible = _subscriptions.Count == 0;
+        SubscriptionsList.IsVisible = _subscriptions.Count > 0;
     }
 
     private async void Connect_Click(object? sender, RoutedEventArgs e)
@@ -173,7 +176,27 @@ public partial class MainWindow : Window
     {
         SubscriptionErrorText.IsVisible = false;
         SubscriptionOverlay.IsVisible = true;
-        SubscriptionNameTextBox.Focus();
+        SubscriptionUrlTextBox.Focus();
+    }
+
+    private void GoToSubscriptions_Click(object? sender, RoutedEventArgs e) => MainTabs.SelectedIndex = 1;
+
+    private async void PasteSubscriptionUrl_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var clipboard = Clipboard ?? throw new InvalidOperationException("Буфер обмена недоступен.");
+            var text = await clipboard.TryGetTextAsync();
+            if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("Буфер обмена не содержит ссылку.");
+            SubscriptionUrlTextBox.Text = text.Trim();
+            SubscriptionUrlTextBox.CaretIndex = SubscriptionUrlTextBox.Text.Length;
+            SubscriptionErrorText.IsVisible = false;
+        }
+        catch (Exception exception)
+        {
+            SubscriptionErrorText.Text = $"Не удалось прочитать буфер обмена: {exception.Message}";
+            SubscriptionErrorText.IsVisible = true;
+        }
     }
 
     private void CancelSubscription_Click(object? sender, RoutedEventArgs e)
@@ -185,20 +208,20 @@ public partial class MainWindow : Window
 
     private async void ConfirmSubscription_Click(object? sender, RoutedEventArgs e)
     {
+        ConfirmSubscriptionButton.IsEnabled = false;
         try
         {
             var subscription = SubscriptionDefinition.Create(SubscriptionNameTextBox.Text ?? string.Empty, SubscriptionUrlTextBox.Text ?? string.Empty);
-            await _subscriptionStore.UpsertAsync(subscription);
-            await ReloadSubscriptionsAsync();
-            await RefreshSubscriptionAsync(subscription, quiet: false);
+            await RefreshSubscriptionAsync(subscription, quiet: false, throwOnFailure: true);
             CancelSubscription_Click(sender, e);
             MainTabs.SelectedIndex = 1;
         }
-        catch (Exception exception) when (exception is ArgumentException or FormatException or HttpRequestException or IOException)
+        catch (Exception exception)
         {
-            SubscriptionErrorText.Text = exception.Message;
+            SubscriptionErrorText.Text = UserFacingError(exception);
             SubscriptionErrorText.IsVisible = true;
         }
+        finally { ConfirmSubscriptionButton.IsEnabled = true; }
     }
 
     private async void RefreshSubscription_Click(object? sender, RoutedEventArgs e)
@@ -208,25 +231,32 @@ public partial class MainWindow : Window
         if (definition is not null) await RefreshSubscriptionAsync(definition, quiet: false);
     }
 
-    private async Task RefreshSubscriptionAsync(SubscriptionDefinition subscription, bool quiet)
+    private async Task RefreshSubscriptionAsync(SubscriptionDefinition subscription, bool quiet, bool throwOnFailure = false)
     {
         try
         {
             if (!quiet) EventText.Text = $"Обновляем {subscription.Name}…";
-            var hwid = HwidTextBox.Text ?? await _hwidStore.GetOrCreateAsync();
+            var hwid = await _hwidStore.GetOrCreateAsync();
             var payload = await _subscriptionClient.DownloadAsync(subscription.Url, hwid);
-            var result = new SubscriptionParser().Parse(payload);
-            foreach (var profile in result.Profiles) await _profileStore.UpsertAsync(profile);
-            await _subscriptionStore.UpsertAsync(subscription with { LastUpdated = DateTimeOffset.UtcNow });
+            var result = await new SubscriptionRefreshService(_profileStore, _subscriptionStore, _subscriptionParser).ApplyAsync(subscription, payload);
             await ReloadProfilesAsync();
             await ReloadSubscriptionsAsync();
             if (!quiet) EventText.Text = $"{subscription.Name}: добавлено/обновлено {result.Profiles.Count}, пропущено {result.RejectedLines.Count}.";
         }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or IOException)
+        catch (Exception exception)
         {
-            EventText.Text = $"Не удалось обновить {subscription.Name}: {exception.Message}";
+            EventText.Text = $"Не удалось обновить {subscription.Name}: {UserFacingError(exception)}";
+            if (throwOnFailure) throw;
         }
     }
+
+    private static string UserFacingError(Exception exception) => exception switch
+    {
+        TaskCanceledException => "Сервер не ответил вовремя.",
+        HttpRequestException { StatusCode: not null } http => $"Сервер подписки ответил HTTP {(int)http.StatusCode.Value}.",
+        HttpRequestException => "Не удалось подключиться к серверу подписки.",
+        _ => exception.Message
+    };
 
     private void ServersList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -315,21 +345,6 @@ public partial class MainWindow : Window
         ConnectButton.IsEnabled = !busy && available;
     }
 
-    private void OpenSettings_Click(object? sender, RoutedEventArgs e) => MainTabs.SelectedIndex = 2;
-
-    private async void CopyHwid_Click(object? sender, RoutedEventArgs e)
-    {
-        var hwid = HwidTextBox.Text;
-        if (string.IsNullOrWhiteSpace(hwid)) return;
-        var clipboard = Clipboard;
-        if (clipboard is not null)
-        {
-            var transfer = new Avalonia.Input.DataTransfer();
-            transfer.Add(Avalonia.Input.DataTransferItem.CreateText(hwid));
-            await clipboard.SetDataAsync(transfer);
-        }
-        EventText.Text = "HWID скопирован.";
-    }
 
     private async void SaveSettings_Click(object? sender, RoutedEventArgs e)
     {

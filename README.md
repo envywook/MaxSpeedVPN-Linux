@@ -2,7 +2,7 @@
 
 Самостоятельный Arch-first клиент MaxSpeedVPN на Avalonia/.NET. Это clean-room Linux-приложение: оно не использует код, сборки или архитектуру v2rayN.
 
-> **Статус 0.4.0 alpha:** VLESS Reality через автоматически выбранный Xray/sing-box и NaiveProxy через sing-box поднимают локальный SOCKS/HTTP proxy на `127.0.0.1:10808`. Mieru simple TCP можно импортировать и проверять по TCP, но Connect отключён до завершения app-owned lifecycle integration. System-wide TUN не включён до реализации helper и rooted E2E без утечек маршрутов/DNS.
+> **Статус 0.4.1 alpha:** VLESS Reality через автоматически выбранный Xray/sing-box и NaiveProxy через sing-box поднимают локальный SOCKS/HTTP proxy на `127.0.0.1:10808`. Mieru simple TCP можно импортировать и проверять по TCP, но Connect отключён до завершения app-owned lifecycle integration. System-wide TUN не включён до реализации helper и rooted E2E без утечек маршрутов/DNS.
 
 ## Что работает
 
@@ -30,10 +30,10 @@
 
 ## Установка на Arch Linux
 
-Скачайте `maxspeedvpn-linux-0.4.0-1-x86_64.pkg.tar.zst` со страницы [Releases](https://github.com/envywook/MaxSpeedVPN-Linux/releases):
+Скачайте `maxspeedvpn-linux-0.4.1-1-x86_64.pkg.tar.zst` со страницы [Releases](https://github.com/envywook/MaxSpeedVPN-Linux/releases):
 
 ```bash
-sudo pacman -U ./maxspeedvpn-linux-0.4.0-1-x86_64.pkg.tar.zst
+sudo pacman -U ./maxspeedvpn-linux-0.4.1-1-x86_64.pkg.tar.zst
 maxspeedvpn
 ```
 
@@ -56,7 +56,7 @@ dotnet run --project tests/MaxSpeedVPN.Tests/MaxSpeedVPN.Tests.csproj -c Release
 dotnet build src/MaxSpeedVPN.Desktop/MaxSpeedVPN.Desktop.csproj -c Release -r linux-x64
 ```
 
-0.4.0 alpha имеет core tests, real-engine sing-box/Xray validation, private-storage tests, live-ping cancellation tests и TUN rollback tests. Релиз публикуется только после package/install/runtime smoke и GitHub asset read-back.
+0.4.1 alpha имеет core tests, real-engine sing-box/Xray validation, private-storage tests, live-ping cancellation tests и TUN rollback tests. Релиз публикуется только после package/install/runtime smoke и GitHub asset read-back.
 
 ## Лицензия и бренд
 
@@ -64,4 +64,4 @@ dotnet build src/MaxSpeedVPN.Desktop/MaxSpeedVPN.Desktop.csproj -c Release -r li
 
 ## Целевая платформа
 
-Arch Linux x86_64. 0.4.0 alpha — multi-protocol local-proxy client, не готовый system-wide VPN.
+Arch Linux x86_64. 0.4.1 alpha — multi-protocol local-proxy client, не готовый system-wide VPN.

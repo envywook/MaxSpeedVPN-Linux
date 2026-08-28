@@ -31,7 +31,11 @@ var tests = new (string Name, Func<Task> Run)[]
     ("TUN transaction rolls back after partial failure", TunTransactionRollsBackAfterPartialFailure),
     ("HWID store creates a stable URL-safe private identifier", HwidStoreCreatesStablePrivateIdentifier),
     ("Subscription parser imports supported lines and reports rejects", SubscriptionParserImportsSupportedLinesAndReportsRejects),
+    ("Subscription parser rejects an empty or unsupported payload", SubscriptionParserRejectsEmptyOrUnsupportedPayload),
+    ("Subscription definition trims URL and derives a default name", SubscriptionDefinitionTrimsUrlAndDerivesDefaultName),
     ("Subscription store persists URL privately", SubscriptionStorePersistsUrlPrivately),
+    ("Subscription refresh atomically replaces only its own profiles", SubscriptionRefreshAtomicallyReplacesOnlyItsOwnProfiles),
+    ("Subscription refresh does not persist a failed empty import", SubscriptionRefreshDoesNotPersistFailedEmptyImport),
     ("Settings store persists engine and Russia routing choices", SettingsStorePersistsChoices),
     ("Core selector automatically picks a compatible installed engine", CoreSelectorPicksCompatibleInstalledEngine),
     ("Core selector rejects unsupported engine and protocol combinations", CoreSelectorRejectsUnsupportedCombination),
@@ -39,7 +43,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("All-traffic routing keeps private networks direct", AllTrafficRoutingKeepsPrivateNetworksDirect),
     ("Regional routing is honestly gated without a pinned ruleset", RegionalRoutingIsGatedWithoutRuleset),
     ("Stored sing-box runtime reports controller state", StoredSingBoxRuntimeReportsControllerState),
-    ("Subscription client forwards HWID without query-string leakage", SubscriptionClientForwardsHwidPrivately)
+    ("Subscription client sends Remnawave headers without query-string leakage", SubscriptionClientSendsRemnawaveHeadersPrivately)
 };
 
 var failed = 0;
@@ -500,6 +504,23 @@ static Task SubscriptionParserImportsSupportedLinesAndReportsRejects()
     return Task.CompletedTask;
 }
 
+static Task SubscriptionParserRejectsEmptyOrUnsupportedPayload()
+{
+    Throws<FormatException>(() => new SubscriptionParser().Parse(""));
+    Throws<FormatException>(() => new SubscriptionParser().Parse("<html>login required</html>"));
+    Throws<FormatException>(() => new SubscriptionParser().Parse("dm1lc3M6Ly91bnN1cHBvcnRlZA=="));
+    return Task.CompletedTask;
+}
+
+static Task SubscriptionDefinitionTrimsUrlAndDerivesDefaultName()
+{
+    var subscription = SubscriptionDefinition.Create("", "  https://subscription.example/path?token=secret  ");
+    Equal("subscription.example", subscription.Name);
+    Equal("https://subscription.example/path?token=secret", subscription.Url);
+    Equal(subscription.Id, SubscriptionDefinition.Create("Другое имя", subscription.Url).Id);
+    return Task.CompletedTask;
+}
+
 static async Task SubscriptionStorePersistsUrlPrivately()
 {
     var root = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-subscriptions-{Guid.NewGuid():N}");
@@ -513,6 +534,55 @@ static async Task SubscriptionStorePersistsUrlPrivately()
     if (!OperatingSystem.IsWindows())
         Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(Path.Combine(root, "subscriptions.json")));
     Directory.Delete(root, true);
+}
+
+static async Task SubscriptionRefreshAtomicallyReplacesOnlyItsOwnProfiles()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-subscription-refresh-{Guid.NewGuid():N}");
+    try
+    {
+        var profiles = new ProfileStore(Path.Combine(root, "profiles"));
+        var subscriptions = new SubscriptionStore(Path.Combine(root, "subscriptions"));
+        var subscription = SubscriptionDefinition.Create("Основная", "https://subscription.example/list");
+        var unrelated = new ProfileParser().ParseStored("naive+https://user:pass@direct.example.com:443#Manual");
+        var oldOwned = StoredProfile.FromVpnProfile(SampleProfile()) with
+        {
+            Id = "old-owned",
+            Name = "Old",
+            SubscriptionId = subscription.Id
+        };
+        await profiles.UpsertAsync(unrelated);
+        await profiles.UpsertAsync(oldOwned);
+
+        var payload = "vless://00000000-0000-0000-0000-000000000001@new.example.com:443?security=reality&sni=cdn.example.com&fp=chrome&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=ab&type=tcp#New";
+        var service = new SubscriptionRefreshService(profiles, subscriptions, new SubscriptionParser());
+        var result = await service.ApplyAsync(subscription, payload);
+
+        Equal(1, result.Profiles.Count);
+        var loaded = await profiles.LoadAsync();
+        Equal(2, loaded.Count);
+        Equal(true, loaded.Any(item => item.Id == unrelated.Id && item.SubscriptionId is null));
+        Equal(true, loaded.Any(item => item.Name == "New" && item.SubscriptionId == subscription.Id));
+        Equal(false, loaded.Any(item => item.Id == oldOwned.Id));
+        Equal(true, (await subscriptions.LoadAsync()).Single().LastUpdated is not null);
+    }
+    finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+}
+
+static async Task SubscriptionRefreshDoesNotPersistFailedEmptyImport()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-subscription-empty-{Guid.NewGuid():N}");
+    try
+    {
+        var profiles = new ProfileStore(Path.Combine(root, "profiles"));
+        var subscriptions = new SubscriptionStore(Path.Combine(root, "subscriptions"));
+        var subscription = SubscriptionDefinition.Create("Пустая", "https://subscription.example/empty");
+        var service = new SubscriptionRefreshService(profiles, subscriptions, new SubscriptionParser());
+        await ThrowsAsync<FormatException>(() => service.ApplyAsync(subscription, "<html>denied</html>"));
+        Equal(0, (await profiles.LoadAsync()).Count);
+        Equal(0, (await subscriptions.LoadAsync()).Count);
+    }
+    finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
 }
 
 static async Task SettingsStorePersistsChoices()
@@ -599,12 +669,17 @@ static async Task StoredSingBoxRuntimeReportsControllerState()
     finally { Directory.Delete(root, true); }
 }
 
-static async Task SubscriptionClientForwardsHwidPrivately()
+static async Task SubscriptionClientSendsRemnawaveHeadersPrivately()
 {
     var handler = new RecordingHttpHandler("dmxlc3M6Ly9leGFtcGxl");
     using var client = new SubscriptionClient(new System.Net.Http.HttpClient(handler));
     Equal("dmxlc3M6Ly9leGFtcGxl", await client.DownloadAsync("https://subscription.example/path?token=secret", "device-id"));
-    Equal("device-id", handler.Request?.Headers.GetValues("X-Device-ID").Single());
+    Equal("device-id", handler.Request?.Headers.GetValues("X-Hwid").Single());
+    Equal("Linux", handler.Request?.Headers.GetValues("X-Device-Os").Single());
+    Equal(true, handler.Request?.Headers.Contains("X-Ver-Os"));
+    Equal(true, handler.Request?.Headers.Contains("X-Device-Model"));
+    Equal(true, handler.Request?.Headers.UserAgent.ToString().StartsWith("MaxSpeedVPN/", StringComparison.Ordinal));
+    Equal(false, handler.Request?.Headers.Contains("X-Device-ID"));
     Equal("token=secret", handler.Request?.RequestUri?.Query.TrimStart('?'));
 }
 

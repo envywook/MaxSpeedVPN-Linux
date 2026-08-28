@@ -663,7 +663,8 @@ public sealed record StoredProfile(
     string SourceUri = "",
     string Username = "",
     string Password = "",
-    string Transport = "TCP")
+    string Transport = "TCP",
+    string? SubscriptionId = null)
 {
     public static StoredProfile FromVpnProfile(VpnProfile profile) => new(
         profile.Id,
@@ -697,11 +698,33 @@ public sealed class ProfileStore
 
     public async Task UpsertAsync(StoredProfile profile, CancellationToken cancellationToken = default)
     {
-        EnsurePrivateDirectory(_directory);
         var profiles = (await LoadAsync(cancellationToken)).ToList();
         var existing = profiles.FindIndex(item => string.Equals(item.Id, profile.Id, StringComparison.Ordinal));
         if (existing >= 0) profiles[existing] = profile;
         else profiles.Add(profile);
+        await SaveAsync(profiles, cancellationToken);
+    }
+
+    public async Task ReplaceSubscriptionAsync(string subscriptionId, IReadOnlyList<StoredProfile> imported, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(subscriptionId)) throw new ArgumentException("Subscription ID is required.", nameof(subscriptionId));
+        if (imported.Count == 0) throw new FormatException("Подписка не содержит поддерживаемых серверов.");
+        var profiles = (await LoadAsync(cancellationToken))
+            .Where(item => !string.Equals(item.SubscriptionId, subscriptionId, StringComparison.Ordinal))
+            .ToList();
+        foreach (var profile in imported)
+        {
+            var owned = profile with { SubscriptionId = subscriptionId };
+            var existing = profiles.FindIndex(item => string.Equals(item.Id, owned.Id, StringComparison.Ordinal));
+            if (existing >= 0) profiles[existing] = owned;
+            else profiles.Add(owned);
+        }
+        await SaveAsync(profiles, cancellationToken);
+    }
+
+    private async Task SaveAsync(IReadOnlyList<StoredProfile> profiles, CancellationToken cancellationToken)
+    {
+        EnsurePrivateDirectory(_directory);
         var tempPath = _path + ".tmp";
         if (File.Exists(tempPath)) File.Delete(tempPath);
         var options = new FileStreamOptions
@@ -753,11 +776,13 @@ public sealed record SubscriptionDefinition(string Id, string Name, string Url, 
 {
     public static SubscriptionDefinition Create(string name, string url)
     {
-        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Название подписки обязательно.", nameof(name));
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
+        var normalizedUrl = url.Trim();
+        if (!Uri.TryCreate(normalizedUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
             throw new FormatException("Подписка должна использовать http:// или https://.");
-        var id = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(url)))[..16].ToLowerInvariant();
-        return new SubscriptionDefinition(id, name.Trim(), url.Trim());
+        var normalizedName = name.Trim();
+        if (normalizedName.Length == 0) normalizedName = uri.Host;
+        var id = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(normalizedUrl)))[..16].ToLowerInvariant();
+        return new SubscriptionDefinition(id, normalizedName, normalizedUrl);
     }
 }
 
@@ -777,6 +802,10 @@ public sealed class SubscriptionParser
             try { profiles.Add(_profileParser.ParseStored(line)); }
             catch (FormatException) { rejected.Add(line); }
         }
+        if (profiles.Count == 0)
+            throw new FormatException(rejected.Count == 0
+                ? "Подписка пуста."
+                : "Подписка не содержит поддерживаемых VLESS Reality, NaiveProxy или Mieru-профилей.");
         return new SubscriptionParseResult(profiles, rejected);
     }
 
@@ -804,13 +833,38 @@ public sealed class SubscriptionClient : IDisposable
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
             throw new FormatException("Подписка должна использовать http:// или https://.");
         using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, uri);
-        request.Headers.TryAddWithoutValidation("X-Device-ID", hwid);
+        request.Headers.TryAddWithoutValidation("User-Agent", "MaxSpeedVPN/0.4 Linux");
+        request.Headers.TryAddWithoutValidation("X-Hwid", hwid);
+        request.Headers.TryAddWithoutValidation("X-Device-Os", "Linux");
+        request.Headers.TryAddWithoutValidation("X-Ver-Os", Environment.OSVersion.VersionString[..Math.Min(64, Environment.OSVersion.VersionString.Length)]);
+        request.Headers.TryAddWithoutValidation("X-Device-Model", System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString());
         using var response = await _httpClient.SendAsync(request, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(cancellationToken);
+        if (HeaderIsTrue(response, "x-hwid-max-devices-reached"))
+            throw new InvalidOperationException("Достигнут лимит устройств подписки.");
+        if (HeaderIsTrue(response, "x-hwid-not-supported"))
+            throw new InvalidOperationException("Сервер подписки отклонил идентификатор устройства.");
+        if (!response.IsSuccessStatusCode)
+            throw new System.Net.Http.HttpRequestException($"Сервер подписки ответил HTTP {(int)response.StatusCode}.", null, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (content.Length > 8_000_000) throw new InvalidOperationException("Ответ подписки слишком большой.");
+        return content;
     }
 
+    private static bool HeaderIsTrue(System.Net.Http.HttpResponseMessage response, string name) =>
+        response.Headers.TryGetValues(name, out var values) && values.Any(value => string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
+
     public void Dispose() => _httpClient.Dispose();
+}
+
+public sealed class SubscriptionRefreshService(ProfileStore profiles, SubscriptionStore subscriptions, SubscriptionParser parser)
+{
+    public async Task<SubscriptionParseResult> ApplyAsync(SubscriptionDefinition subscription, string payload, CancellationToken cancellationToken = default)
+    {
+        var result = parser.Parse(payload);
+        await profiles.ReplaceSubscriptionAsync(subscription.Id, result.Profiles, cancellationToken);
+        await subscriptions.UpsertAsync(subscription with { LastUpdated = DateTimeOffset.UtcNow }, cancellationToken);
+        return result;
+    }
 }
 
 public sealed class SubscriptionStore
