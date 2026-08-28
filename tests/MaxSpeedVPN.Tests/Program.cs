@@ -11,6 +11,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("AppPaths follows XDG data home", AppPathsFollowsXdgDataHome),
     ("SingBoxRuntime writes config and owns process", SingBoxRuntimeWritesConfigAndOwnsProcess),
     ("ProfileParser rejects unsupported transport and invalid Reality fields", ProfileParserRejectsUnsupportedRealityVariants),
+    ("ProfileParser parses VLESS xHTTP TLS and Reality links", ProfileParserParsesVlessXhttpVariants),
+    ("ProfileParser parses Hysteria2 with salamander and port hopping", ProfileParserParsesHysteria2),
     ("SingBoxRuntime cancellation after spawn reaps process", SingBoxRuntimeCancellationAfterSpawnReapsProcess),
     ("SingBoxRuntime unexpected exit propagates to controller", SingBoxRuntimeUnexpectedExitPropagatesToController),
     ("SingBoxRuntime secures and removes runtime config", SingBoxRuntimeSecuresAndRemovesRuntimeConfig),
@@ -32,6 +34,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("HWID store creates a stable URL-safe private identifier", HwidStoreCreatesStablePrivateIdentifier),
     ("Subscription parser imports supported lines and reports rejects", SubscriptionParserImportsSupportedLinesAndReportsRejects),
     ("Subscription parser rejects an empty or unsupported payload", SubscriptionParserRejectsEmptyOrUnsupportedPayload),
+    ("Subscription parser imports Remnawave base64 xHTTP and Hysteria2 payload", SubscriptionParserImportsRemnawaveXhttpAndHysteria2),
     ("Subscription definition trims URL and derives a default name", SubscriptionDefinitionTrimsUrlAndDerivesDefaultName),
     ("Subscription store persists URL privately", SubscriptionStorePersistsUrlPrivately),
     ("Subscription refresh atomically replaces only its own profiles", SubscriptionRefreshAtomicallyReplacesOnlyItsOwnProfiles),
@@ -39,8 +42,12 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Settings store persists engine and Russia routing choices", SettingsStorePersistsChoices),
     ("Core selector automatically picks a compatible installed engine", CoreSelectorPicksCompatibleInstalledEngine),
     ("Core selector rejects unsupported engine and protocol combinations", CoreSelectorRejectsUnsupportedCombination),
+    ("Core selector prefers Xray for dual-core profiles", CoreSelectorPrefersXrayForDualCoreProfiles),
+    ("Stored writers render xHTTP and Hysteria2 for exact cores", StoredWritersRenderXhttpAndHysteria2),
+    ("Stored xHTTP and Hysteria2 configs pass exact engine validation", StoredModernConfigsPassRealEngineValidation),
     ("Stored Xray writer accepts only compatible VLESS profiles", StoredXrayWriterAcceptsOnlyVlessProfiles),
     ("All-traffic routing keeps private networks direct", AllTrafficRoutingKeepsPrivateNetworksDirect),
+    ("Direct routing bypasses proxy outbound", DirectRoutingBypassesProxyOutbound),
     ("Regional routing is honestly gated without a pinned ruleset", RegionalRoutingIsGatedWithoutRuleset),
     ("Stored sing-box runtime reports controller state", StoredSingBoxRuntimeReportsControllerState),
     ("Subscription client sends Remnawave headers without query-string leakage", SubscriptionClientSendsRemnawaveHeadersPrivately)
@@ -88,6 +95,49 @@ static Task ProfileParserRejectsUnsupportedRealityVariants()
     var parser = new ProfileParser();
     Throws<FormatException>(() => parser.Parse("vless://00000000-0000-0000-0000-000000000001@vpn.example.com:443?security=reality&type=ws&sni=cdn.example.com&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=ab"));
     Throws<FormatException>(() => parser.Parse("vless://not-a-uuid@vpn.example.com:443?security=reality&type=tcp&sni=cdn.example.com&pbk=bad&sid=xyz"));
+    return Task.CompletedTask;
+}
+
+static Task ProfileParserParsesVlessXhttpVariants()
+{
+    var parser = new ProfileParser();
+    var tls = parser.ParseStored("vless://00000000-0000-0000-0000-000000000001@v.example.com:443?encryption=none&type=xhttp&path=%2Fapi%2Fv1%2Fsync&mode=packet-up&security=tls&sni=v.example.com&fp=chrome&alpn=h2&extra=%7B%22scMaxBufferedPosts%22%3A30%7D#TLS%20xHTTP");
+    Equal("VLESS xHTTP TLS", tls.ProtocolLabel);
+    Equal("xhttp", tls.Transport);
+    Equal("/api/v1/sync", tls.RuntimeProfile?.TransportPath);
+    Equal("packet-up", tls.RuntimeProfile?.TransportMode);
+    Equal("{\"scMaxBufferedPosts\":30}", tls.RuntimeProfile?.TransportExtra);
+
+    var reality = parser.ParseStored("vless://00000000-0000-0000-0000-000000000001@r.example.com:444?encryption=none&type=xhttp&mode=auto&security=reality&sni=cdn.example.com&fp=firefox&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=ab#Reality%20xHTTP");
+    Equal("VLESS xHTTP Reality", reality.ProtocolLabel);
+    Equal("reality", reality.RuntimeProfile?.Security);
+    Equal("xhttp", reality.RuntimeProfile?.Transport);
+    return Task.CompletedTask;
+}
+
+static Task ProfileParserParsesHysteria2()
+{
+    var fm = Uri.EscapeDataString("{\"quicParams\":{\"udpHop\":{\"ports\":\"20000-20100\",\"interval\":\"15-30\"}}}");
+    var profile = new ProfileParser().ParseStored($"hysteria2://secret@hy.example.com:20000?obfs=salamander&obfs-password=obfs-secret&sni=hy.example.com&fm={fm}#HY2");
+    Equal("hysteria2", profile.Protocol);
+    Equal("Hysteria2", profile.ProtocolLabel);
+    Equal("secret", profile.Password);
+    Equal("salamander", profile.Obfs);
+    Equal("obfs-secret", profile.ObfsPassword);
+    Equal("20000-20100", profile.ServerPorts);
+    Equal("15-30s", profile.HopInterval);
+    return Task.CompletedTask;
+}
+
+static Task SubscriptionParserImportsRemnawaveXhttpAndHysteria2()
+{
+    var xhttp = "vless://00000000-0000-0000-0000-000000000001@v.example.com:443?encryption=none&type=xhttp&path=%2Fapi%2Fv1%2Fsync&mode=auto&security=tls&sni=v.example.com&fp=chrome&alpn=h2#xHTTP";
+    var hysteria2 = "hysteria2://secret@hy.example.com:443?sni=hy.example.com#HY2";
+    var payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{xhttp}\n{hysteria2}\n"));
+    var result = new SubscriptionParser().Parse(payload);
+    Equal(2, result.Profiles.Count);
+    Equal(0, result.RejectedLines.Count);
+    Sequence(new[] { "VLESS xHTTP TLS", "Hysteria2" }, result.Profiles.Select(profile => profile.ProtocolLabel).ToArray());
     return Task.CompletedTask;
 }
 
@@ -618,6 +668,81 @@ static Task CoreSelectorRejectsUnsupportedCombination()
     return Task.CompletedTask;
 }
 
+static Task CoreSelectorPrefersXrayForDualCoreProfiles()
+{
+    var paths = new CorePaths("/opt/maxspeedvpn/bin/sing-box", "/opt/maxspeedvpn/bin/xray", "/opt/maxspeedvpn/bin/mieru");
+    var selector = new CoreSelector(_ => true);
+    var hysteria2 = new ProfileParser().ParseStored("hysteria2://secret@hy.example.com:443?sni=hy.example.com#HY2");
+    Equal(CoreKind.Xray, selector.Select(hysteria2, CorePreference.Auto, paths).Kind);
+    Equal(CoreKind.SingBox, selector.Select(hysteria2, CorePreference.SingBox, paths).Kind);
+    var xhttp = new ProfileParser().ParseStored("vless://00000000-0000-0000-0000-000000000001@v.example.com:443?encryption=none&type=xhttp&path=%2Fsync&mode=auto&security=tls&sni=v.example.com&fp=chrome#xHTTP");
+    Equal(CoreKind.Xray, selector.Select(xhttp, CorePreference.Auto, paths).Kind);
+    Throws<NotSupportedException>(() => selector.Select(xhttp, CorePreference.SingBox, paths));
+    return Task.CompletedTask;
+}
+
+static Task StoredWritersRenderXhttpAndHysteria2()
+{
+    var parser = new ProfileParser();
+    var xhttp = parser.ParseStored("vless://00000000-0000-0000-0000-000000000001@v.example.com:443?encryption=none&type=xhttp&path=%2Fsync&mode=packet-up&security=tls&sni=v.example.com&fp=chrome&extra=%7B%22scMaxBufferedPosts%22%3A30%7D#xHTTP");
+    var xrayXhttp = new StoredXrayConfigWriter(xhttp).Write(xhttp.RuntimeProfile!, 10808);
+    Contains("\"network\": \"xhttp\"", xrayXhttp);
+    Contains("\"xhttpSettings\"", xrayXhttp);
+    Contains("\"mode\": \"packet-up\"", xrayXhttp);
+    Throws<NotSupportedException>(() => new StoredSingBoxConfigWriter(xhttp).Write(xhttp.RuntimeProfile!, 10808));
+
+    var fm = Uri.EscapeDataString("{\"udp\":[{\"type\":\"salamander\",\"settings\":{\"password\":\"obfs-secret\"}}],\"quicParams\":{\"udpHop\":{\"ports\":\"20000-20100\",\"interval\":\"15\"}}}");
+    var hy2 = parser.ParseStored($"hysteria2://secret@hy.example.com:20000?sni=hy.example.com&fm={fm}#HY2");
+    var xrayHy2 = new StoredXrayConfigWriter(hy2).Write(SampleProfile(), 10808);
+    Contains("\"protocol\": \"hysteria\"", xrayHy2);
+    Contains("\"network\": \"hysteria\"", xrayHy2);
+    Contains("\"auth\": \"secret\"", xrayHy2);
+    Contains("\"finalmask\"", xrayHy2);
+    var singHy2 = new StoredSingBoxConfigWriter(hy2).Write(SampleProfile(), 10808);
+    Contains("\"type\": \"hysteria2\"", singHy2);
+    Contains("\"server_ports\"", singHy2);
+    Contains("\"obfs\"", singHy2);
+    return Task.CompletedTask;
+}
+
+static async Task StoredModernConfigsPassRealEngineValidation()
+{
+    var xray = Environment.GetEnvironmentVariable("MAXSPEEDVPN_TEST_XRAY");
+    var singBox = Environment.GetEnvironmentVariable("MAXSPEEDVPN_TEST_SING_BOX");
+    if (string.IsNullOrWhiteSpace(xray) || !File.Exists(xray) || string.IsNullOrWhiteSpace(singBox) || !File.Exists(singBox))
+    {
+        Console.WriteLine("SKIP modern config validation: exact engines are unset");
+        return;
+    }
+    var parser = new ProfileParser();
+    var xhttp = parser.ParseStored("vless://00000000-0000-0000-0000-000000000001@v.example.com:443?encryption=none&type=xhttp&path=%2Fsync&mode=packet-up&security=tls&sni=v.example.com&fp=chrome&extra=%7B%22scMaxBufferedPosts%22%3A30%7D#xHTTP");
+    var fm = Uri.EscapeDataString("{\"udp\":[{\"type\":\"salamander\",\"settings\":{\"password\":\"obfs-secret\"}}],\"quicParams\":{\"udpHop\":{\"ports\":\"20000-20100\",\"interval\":\"15\"}}}");
+    var hy2 = parser.ParseStored($"hysteria2://secret@hy.example.com:20000?sni=hy.example.com&fm={fm}#HY2");
+    var checks = new[]
+    {
+        (Executable: xray, Config: new StoredXrayConfigWriter(xhttp).Write(xhttp.RuntimeProfile!, 10808), Args: new[] { "run", "-test", "-c" }),
+        (Executable: xray, Config: new StoredXrayConfigWriter(hy2).Write(SampleProfile(), 10808), Args: new[] { "run", "-test", "-c" }),
+        (Executable: singBox, Config: new StoredSingBoxConfigWriter(hy2).Write(SampleProfile(), 10808), Args: new[] { "check", "-c" })
+    };
+    foreach (var check in checks)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"maxspeed-modern-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(path, check.Config);
+        try
+        {
+            var start = new System.Diagnostics.ProcessStartInfo(check.Executable) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            foreach (var argument in check.Args) start.ArgumentList.Add(argument);
+            start.ArgumentList.Add(path);
+            using var process = System.Diagnostics.Process.Start(start) ?? throw new Exception("engine validation failed to start");
+            var output = await process.StandardOutput.ReadToEndAsync();
+            var error = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            if (process.ExitCode != 0) throw new Exception($"modern config validation failed: {output} {error}".Trim());
+        }
+        finally { File.Delete(path); }
+    }
+}
+
 static Task StoredXrayWriterAcceptsOnlyVlessProfiles()
 {
     var vless = StoredProfile.FromVpnProfile(SampleProfile());
@@ -635,7 +760,20 @@ static Task AllTrafficRoutingKeepsPrivateNetworksDirect()
     Contains("\"action\": \"route\"", singBox);
     Contains("\"outbound\": \"direct\"", singBox);
     var xray = new StoredXrayConfigWriter(profile, new RoutingOptions(RussiaRoutingMode.AllTraffic, true)).Write(SampleProfile(), 10808);
-    Contains("geoip:private", xray);
+    Contains("127.0.0.0/8", xray);
+    Contains("10.0.0.0/8", xray);
+    Contains("192.168.0.0/16", xray);
+    Contains("\"outboundTag\": \"direct\"", xray);
+    return Task.CompletedTask;
+}
+
+static Task DirectRoutingBypassesProxyOutbound()
+{
+    var profile = StoredProfile.FromVpnProfile(SampleProfile());
+    var singBox = new StoredSingBoxConfigWriter(profile, new RoutingOptions(RussiaRoutingMode.Direct, true)).Write(SampleProfile(), 10808);
+    Contains("\"final\": \"direct\"", singBox);
+    var xray = new StoredXrayConfigWriter(profile, new RoutingOptions(RussiaRoutingMode.Direct, true)).Write(SampleProfile(), 10808);
+    Contains("\"network\": \"tcp,udp\"", xray);
     Contains("\"outboundTag\": \"direct\"", xray);
     return Task.CompletedTask;
 }

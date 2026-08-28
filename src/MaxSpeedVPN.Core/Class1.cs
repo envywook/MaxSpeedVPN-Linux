@@ -20,7 +20,13 @@ public sealed record VpnProfile(
     string ServerName,
     string Fingerprint,
     string PublicKey,
-    string ShortId);
+    string ShortId,
+    string Flow = "",
+    string Transport = "tcp",
+    string HostHeader = "",
+    string TransportPath = "",
+    string TransportMode = "",
+    string TransportExtra = "");
 
 public sealed class ProfileParser
 {
@@ -34,7 +40,10 @@ public sealed class ProfileParser
             return ParseNaive(uri, value);
         if (string.Equals(uri.Scheme, "mierus", StringComparison.OrdinalIgnoreCase))
             return ParseMieru(uri, value);
-        throw new FormatException("Supported profiles: VLESS Reality, NaiveProxy and Mieru.");
+        if (string.Equals(uri.Scheme, "hysteria2", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Scheme, "hy2", StringComparison.OrdinalIgnoreCase))
+            return ParseHysteria2(uri, value);
+        throw new FormatException("Supported profiles: VLESS Reality/TLS, xHTTP, Hysteria2, NaiveProxy and Mieru.");
     }
 
     public VpnProfile Parse(string value)
@@ -47,18 +56,24 @@ public sealed class ProfileParser
         var query = ParseQuery(uri.Query);
         if (!Guid.TryParse(Uri.UnescapeDataString(uri.UserInfo), out _))
             throw new FormatException("VLESS user must be a UUID.");
-        if (!string.Equals(query.GetValueOrDefault("security"), "reality", StringComparison.OrdinalIgnoreCase))
-            throw new FormatException("Only VLESS Reality profiles are supported.");
-        if (!string.Equals(query.GetValueOrDefault("type", "tcp"), "tcp", StringComparison.OrdinalIgnoreCase))
-            throw new FormatException("Only VLESS Reality over TCP is supported.");
-        if (query.TryGetValue("flow", out var flow) && !string.IsNullOrWhiteSpace(flow))
-            throw new FormatException("VLESS flow is not supported yet.");
-        if (!IsBase64Url(query.GetValueOrDefault("pbk"), 43))
+        var security = query.GetValueOrDefault("security", "tls");
+        if (!string.Equals(security, "reality", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(security, "tls", StringComparison.OrdinalIgnoreCase))
+            throw new FormatException("Only VLESS Reality and TLS profiles are supported.");
+        var transport = query.GetValueOrDefault("type", "tcp").ToLowerInvariant();
+        if (transport is not ("tcp" or "xhttp"))
+            throw new FormatException("Only VLESS TCP and xHTTP are supported.");
+        var flow = query.GetValueOrDefault("flow", string.Empty);
+        if (!string.IsNullOrWhiteSpace(flow) && !string.Equals(flow, "xtls-rprx-vision", StringComparison.OrdinalIgnoreCase))
+            throw new FormatException("VLESS flow is not supported.");
+        if (string.Equals(security, "reality", StringComparison.OrdinalIgnoreCase)
+            && !IsBase64Url(query.GetValueOrDefault("pbk"), 43))
             throw new FormatException("Reality public key is invalid.");
         var shortId = query.GetValueOrDefault("sid", string.Empty);
         if (shortId.Length > 16 || shortId.Length % 2 != 0 || !shortId.All(Uri.IsHexDigit))
             throw new FormatException("Reality short id is invalid.");
-        var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "security", "type", "sni", "fp", "pbk", "sid", "flow" };
+        var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "encryption", "security", "type", "sni", "fp", "pbk", "sid", "flow", "host", "path", "mode", "extra", "alpn", "allowInsecure" };
         if (query.Keys.Any(key => !supported.Contains(key)))
             throw new FormatException("Profile contains unsupported VLESS parameters.");
 
@@ -71,11 +86,70 @@ public sealed class ProfileParser
             Host: uri.Host,
             Port: uri.Port,
             UserId: Uri.UnescapeDataString(uri.UserInfo),
-            Security: query.GetValueOrDefault("security", "tls"),
+            Security: security,
             ServerName: query.GetValueOrDefault("sni", uri.Host),
             Fingerprint: query.GetValueOrDefault("fp", "chrome"),
             PublicKey: query.GetValueOrDefault("pbk", string.Empty),
-            ShortId: query.GetValueOrDefault("sid", string.Empty));
+            ShortId: query.GetValueOrDefault("sid", string.Empty),
+            Flow: flow,
+            Transport: transport,
+            HostHeader: query.GetValueOrDefault("host", string.Empty),
+            TransportPath: query.GetValueOrDefault("path", string.Empty),
+            TransportMode: query.GetValueOrDefault("mode", string.Empty),
+            TransportExtra: query.GetValueOrDefault("extra", string.Empty));
+    }
+
+    private static StoredProfile ParseHysteria2(Uri uri, string source)
+    {
+        if (string.IsNullOrWhiteSpace(uri.UserInfo) || string.IsNullOrWhiteSpace(uri.Host) || uri.Port <= 0)
+            throw new FormatException("Hysteria2 profile is missing password, host or port.");
+        var query = ParseQuery(uri.Query);
+        var name = Uri.UnescapeDataString(uri.Fragment.TrimStart('#'));
+        if (string.IsNullOrWhiteSpace(name)) name = uri.Host;
+        var obfs = query.GetValueOrDefault("obfs", string.Empty);
+        var obfsPassword = query.GetValueOrDefault("obfs-password", string.Empty);
+        var ports = string.Empty;
+        var hopInterval = string.Empty;
+        var fm = query.GetValueOrDefault("fm", string.Empty);
+        if (!string.IsNullOrWhiteSpace(fm))
+        {
+            try
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(fm);
+                if (document.RootElement.TryGetProperty("quicParams", out var quic)
+                    && quic.TryGetProperty("udpHop", out var hop))
+                {
+                    if (hop.TryGetProperty("ports", out var portValue)) ports = portValue.GetString() ?? string.Empty;
+                    if (hop.TryGetProperty("interval", out var interval))
+                    {
+                        var raw = interval.ValueKind == System.Text.Json.JsonValueKind.String ? interval.GetString() ?? string.Empty : interval.GetRawText();
+                        hopInterval = string.IsNullOrWhiteSpace(raw) ? string.Empty : raw.EndsWith('s') ? raw : $"{raw}s";
+                    }
+                }
+                if (string.IsNullOrWhiteSpace(obfs)
+                    && document.RootElement.TryGetProperty("udp", out var masks)
+                    && masks.ValueKind == System.Text.Json.JsonValueKind.Array && masks.GetArrayLength() > 0)
+                {
+                    var mask = masks[0];
+                    if (mask.TryGetProperty("type", out var type)) obfs = type.GetString() ?? string.Empty;
+                    if (mask.TryGetProperty("settings", out var settings)
+                        && settings.TryGetProperty("password", out var password)) obfsPassword = password.GetString() ?? string.Empty;
+                }
+            }
+            catch (System.Text.Json.JsonException exception)
+            {
+                throw new FormatException("Hysteria2 fm parameter contains invalid JSON.", exception);
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(obfs) && !string.Equals(obfs, "salamander", StringComparison.OrdinalIgnoreCase))
+            throw new FormatException($"Hysteria2 obfs '{obfs}' is not supported.");
+        if (string.Equals(obfs, "salamander", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(obfsPassword))
+            throw new FormatException("Hysteria2 salamander requires an obfs password.");
+        return new StoredProfile(
+            $"hysteria2:{uri.Host}:{uri.Port}", name, "hysteria2", "Hysteria2", uri.Host, uri.Port,
+            RuntimeProfile: null, SourceUri: source, Password: Uri.UnescapeDataString(uri.UserInfo), Transport: "hysteria",
+            Security: "tls", ServerName: query.GetValueOrDefault("sni", uri.Host),
+            Obfs: obfs, ObfsPassword: obfsPassword, ServerPorts: ports, HopInterval: hopInterval);
     }
 
     private static StoredProfile ParseNaive(Uri uri, string source)
@@ -202,13 +276,17 @@ public sealed class SingBoxConfigWriter : ICoreConfigWriter
     {
         object outbound = profile.Protocol switch
         {
-            "vless" when profile.RuntimeProfile is not null => CreateVlessOutbound(profile.RuntimeProfile),
+            "vless" when profile.RuntimeProfile is not null
+                && !string.Equals(profile.RuntimeProfile.Transport, "xhttp", StringComparison.OrdinalIgnoreCase)
+                => CreateVlessOutbound(profile.RuntimeProfile),
+            "hysteria2" => CreateHysteria2Outbound(profile),
             "naive" => new
             {
                 type = "naive", tag = "vpn", server = profile.Host, server_port = profile.Port,
                 username = profile.Username, password = profile.Password,
                 tls = new { enabled = true, server_name = profile.Host }
             },
+            "vless" => throw new NotSupportedException("VLESS xHTTP требует Xray."),
             _ => throw new NotSupportedException($"{profile.ProtocolLabel} requires its native runtime.")
         };
         var inbounds = new List<object>
@@ -229,6 +307,7 @@ public sealed class SingBoxConfigWriter : ICoreConfigWriter
     private static object CreateVlessOutbound(VpnProfile profile) => new
     {
         type = "vless", tag = "vpn", server = profile.Host, server_port = profile.Port, uuid = profile.UserId,
+        flow = string.IsNullOrWhiteSpace(profile.Flow) ? null : profile.Flow,
         tls = new
         {
             enabled = true, server_name = profile.ServerName,
@@ -236,47 +315,129 @@ public sealed class SingBoxConfigWriter : ICoreConfigWriter
             reality = new { enabled = profile.Security == "reality", public_key = profile.PublicKey, short_id = profile.ShortId }
         }
     };
+
+    private static System.Text.Json.Nodes.JsonObject CreateHysteria2Outbound(StoredProfile profile)
+    {
+        var ports = profile.ServerPorts
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(value => value.Replace('-', ':'))
+            .ToArray();
+        var outbound = new System.Text.Json.Nodes.JsonObject
+        {
+            ["type"] = "hysteria2",
+            ["tag"] = "vpn",
+            ["server"] = profile.Host,
+            ["server_port"] = profile.Port,
+            ["password"] = profile.Password,
+            ["tls"] = System.Text.Json.JsonSerializer.SerializeToNode(new
+            {
+                enabled = true,
+                server_name = string.IsNullOrWhiteSpace(profile.ServerName) ? profile.Host : profile.ServerName
+            })
+        };
+        if (ports.Length > 0) outbound["server_ports"] = System.Text.Json.JsonSerializer.SerializeToNode(ports);
+        if (!string.IsNullOrWhiteSpace(profile.HopInterval)) outbound["hop_interval"] = profile.HopInterval;
+        if (!string.IsNullOrWhiteSpace(profile.Obfs))
+            outbound["obfs"] = System.Text.Json.JsonSerializer.SerializeToNode(new { type = profile.Obfs, password = profile.ObfsPassword });
+        return outbound;
+    }
 }
 
 public sealed class XrayConfigWriter : ICoreConfigWriter
 {
-    public string Write(VpnProfile profile, int localPort) => System.Text.Json.JsonSerializer.Serialize(new
+    public string Write(VpnProfile profile, int localPort) => WriteConfig(CreateVlessOutbound(profile), localPort);
+
+    public string Write(StoredProfile profile, int localPort)
+    {
+        object outbound = profile.Protocol switch
+        {
+            "vless" when profile.RuntimeProfile is not null => CreateVlessOutbound(profile.RuntimeProfile),
+            "hysteria2" => CreateHysteria2Outbound(profile),
+            _ => throw new NotSupportedException("Xray поддерживает VLESS и Hysteria2.")
+        };
+        return WriteConfig(outbound, localPort);
+    }
+
+    private static string WriteConfig(object outbound, int localPort) => System.Text.Json.JsonSerializer.Serialize(new
     {
         log = new { loglevel = "warning" },
         inbounds = new object[]
         {
             new { tag = "local-socks", listen = "127.0.0.1", port = localPort, protocol = "socks", settings = new { udp = true } }
         },
-        outbounds = new object[]
-        {
-            new
-            {
-                tag = "vpn",
-                protocol = "vless",
-                settings = new
-                {
-                    vnext = new object[]
-                    {
-                        new { address = profile.Host, port = profile.Port, users = new object[] { new { id = profile.UserId, encryption = "none" } } }
-                    }
-                },
-                streamSettings = new
-                {
-                    network = "tcp",
-                    security = "reality",
-                    realitySettings = new
-                    {
-                        serverName = profile.ServerName,
-                        fingerprint = profile.Fingerprint,
-                        publicKey = profile.PublicKey,
-                        shortId = profile.ShortId
-                    }
-                }
-            },
-            new { tag = "direct", protocol = "freedom" }
-        },
+        outbounds = new object[] { outbound, new { tag = "direct", protocol = "freedom" } },
         routing = new { domainStrategy = "AsIs", rules = Array.Empty<object>() }
     }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+    private static object CreateVlessOutbound(VpnProfile profile)
+    {
+        var transport = new System.Text.Json.Nodes.JsonObject();
+        if (string.Equals(profile.Transport, "xhttp", StringComparison.OrdinalIgnoreCase))
+        {
+            transport["host"] = string.IsNullOrWhiteSpace(profile.HostHeader) ? null : profile.HostHeader;
+            transport["path"] = profile.TransportPath;
+            transport["mode"] = string.IsNullOrWhiteSpace(profile.TransportMode) ? null : profile.TransportMode;
+            if (!string.IsNullOrWhiteSpace(profile.TransportExtra))
+            {
+                try { transport["extra"] = System.Text.Json.Nodes.JsonNode.Parse(profile.TransportExtra); }
+                catch (System.Text.Json.JsonException exception) { throw new FormatException("VLESS xHTTP extra contains invalid JSON.", exception); }
+            }
+        }
+        object tls = string.Equals(profile.Security, "reality", StringComparison.OrdinalIgnoreCase)
+            ? new { serverName = profile.ServerName, fingerprint = profile.Fingerprint, publicKey = profile.PublicKey, shortId = profile.ShortId }
+            : new { serverName = profile.ServerName, fingerprint = profile.Fingerprint };
+        var stream = new System.Text.Json.Nodes.JsonObject
+        {
+            ["network"] = profile.Transport,
+            ["security"] = profile.Security,
+            [string.Equals(profile.Security, "reality", StringComparison.OrdinalIgnoreCase) ? "realitySettings" : "tlsSettings"] = System.Text.Json.JsonSerializer.SerializeToNode(tls)
+        };
+        if (string.Equals(profile.Transport, "xhttp", StringComparison.OrdinalIgnoreCase)) stream["xhttpSettings"] = transport;
+        return new
+        {
+            tag = "vpn", protocol = "vless",
+            settings = new
+            {
+                vnext = new object[]
+                {
+                    new { address = profile.Host, port = profile.Port, users = new object[] { new { id = profile.UserId, encryption = "none", flow = string.IsNullOrWhiteSpace(profile.Flow) ? null : profile.Flow } } }
+                }
+            },
+            streamSettings = stream
+        };
+    }
+
+    private static object CreateHysteria2Outbound(StoredProfile profile)
+    {
+        var finalmask = new System.Text.Json.Nodes.JsonObject();
+        if (!string.IsNullOrWhiteSpace(profile.Obfs))
+            finalmask["udp"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+            {
+                ["type"] = profile.Obfs,
+                ["settings"] = new System.Text.Json.Nodes.JsonObject { ["password"] = profile.ObfsPassword }
+            });
+        if (!string.IsNullOrWhiteSpace(profile.ServerPorts))
+            finalmask["quicParams"] = new System.Text.Json.Nodes.JsonObject
+            {
+                ["udpHop"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["ports"] = profile.ServerPorts,
+                    ["interval"] = profile.HopInterval.TrimEnd('s')
+                }
+            };
+        return new
+        {
+            tag = "vpn", protocol = "hysteria",
+            settings = new { version = 2, address = profile.Host, port = profile.Port },
+            streamSettings = new
+            {
+                network = "hysteria", security = "tls",
+                tlsSettings = new { serverName = string.IsNullOrWhiteSpace(profile.ServerName) ? profile.Host : profile.ServerName, alpn = new[] { "h3" } },
+                hysteriaSettings = new { version = 2, auth = profile.Password },
+                finalmask
+            }
+        };
+    }
 
     public void AddRunArguments(System.Diagnostics.ProcessStartInfo startInfo, string configPath)
     {
@@ -541,6 +702,7 @@ public sealed class StoredSingBoxConfigWriter(StoredProfile profile, RoutingOpti
     {
         EnsureSupportedRouting(routing);
         var json = _writer.Write(profile, localPort, enableTun);
+        if (routing?.Mode == RussiaRoutingMode.Direct) return SetSingBoxFinal(json, "direct");
         return routing is { Mode: RussiaRoutingMode.AllTraffic, PrivateNetworksDirect: true }
             ? AddSingBoxPrivateDirectRule(json)
             : json;
@@ -554,6 +716,13 @@ public sealed class StoredSingBoxConfigWriter(StoredProfile profile, RoutingOpti
         {
             new System.Text.Json.Nodes.JsonObject { ["ip_is_private"] = true, ["action"] = "route", ["outbound"] = "direct" }
         };
+        return node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private static string SetSingBoxFinal(string json, string outbound)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        node["route"]!["final"] = outbound;
         return node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
     }
 
@@ -588,7 +757,8 @@ public sealed class StoredXrayConfigWriter(StoredProfile profile, RoutingOptions
     {
         if (routing?.Mode == RussiaRoutingMode.OnlyUnavailable)
             throw new NotSupportedException("Маршрутизация только недоступных ресурсов требует закреплённого и проверенного регионального ruleset.");
-        var json = _writer.Write(profile.RuntimeProfile ?? throw new NotSupportedException("Xray поддерживает только VLESS Reality профили."), localPort);
+        var json = _writer.Write(profile, localPort);
+        if (routing?.Mode == RussiaRoutingMode.Direct) return AddXrayDirectRule(json);
         if (routing is not { Mode: RussiaRoutingMode.AllTraffic, PrivateNetworksDirect: true }) return json;
         var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
         node["routing"]!["rules"] = new System.Text.Json.Nodes.JsonArray
@@ -596,12 +766,30 @@ public sealed class StoredXrayConfigWriter(StoredProfile profile, RoutingOptions
             new System.Text.Json.Nodes.JsonObject
             {
                 ["type"] = "field",
-                ["ip"] = new System.Text.Json.Nodes.JsonArray("geoip:private"),
+                ["ip"] = new System.Text.Json.Nodes.JsonArray(
+                    "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+                    "169.254.0.0/16", "100.64.0.0/10", "::1/128", "fc00::/7", "fe80::/10"),
                 ["outboundTag"] = "direct"
             }
         };
         return node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
     }
+
+    private static string AddXrayDirectRule(string json)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        node["routing"]!["rules"] = new System.Text.Json.Nodes.JsonArray
+        {
+            new System.Text.Json.Nodes.JsonObject
+            {
+                ["type"] = "field",
+                ["network"] = "tcp,udp",
+                ["outboundTag"] = "direct"
+            }
+        };
+        return node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+    }
+
     public void AddRunArguments(System.Diagnostics.ProcessStartInfo startInfo, string configPath) => _writer.AddRunArguments(startInfo, configPath);
 }
 
@@ -611,7 +799,10 @@ public sealed class StoredXrayRuntime : ExternalCoreRuntime
     public StoredXrayRuntime(string executable, string runtimeDirectory, StoredProfile profile, RoutingOptions? routing = null, int localPort = 10808, TimeSpan? startupTimeout = null)
         : base(executable, runtimeDirectory, new StoredXrayConfigWriter(profile, routing), "Xray", localPort, startupTimeout)
     {
-        _profile = profile.RuntimeProfile ?? throw new NotSupportedException("Xray поддерживает только VLESS Reality профили.");
+        _profile = profile.RuntimeProfile ?? new VpnProfile(
+            profile.Id, profile.Name, profile.Host, profile.Port,
+            "00000000-0000-0000-0000-000000000000", profile.Security, profile.ServerName,
+            "chrome", string.Empty, string.Empty);
     }
     public Task StartAsync(CancellationToken cancellationToken = default) => base.StartAsync(_profile, cancellationToken);
 }
@@ -664,16 +855,27 @@ public sealed record StoredProfile(
     string Username = "",
     string Password = "",
     string Transport = "TCP",
-    string? SubscriptionId = null)
+    string? SubscriptionId = null,
+    string Security = "",
+    string ServerName = "",
+    string Obfs = "",
+    string ObfsPassword = "",
+    string ServerPorts = "",
+    string HopInterval = "")
 {
     public static StoredProfile FromVpnProfile(VpnProfile profile) => new(
         profile.Id,
         profile.Name,
         "vless",
-        string.Equals(profile.Security, "reality", StringComparison.OrdinalIgnoreCase) ? "VLESS Reality" : "VLESS",
+        string.Equals(profile.Transport, "tcp", StringComparison.OrdinalIgnoreCase)
+            ? (string.Equals(profile.Security, "reality", StringComparison.OrdinalIgnoreCase) ? "VLESS Reality" : "VLESS TLS")
+            : $"VLESS xHTTP {(string.Equals(profile.Security, "reality", StringComparison.OrdinalIgnoreCase) ? "Reality" : "TLS")}",
         profile.Host,
         profile.Port,
-        profile);
+        profile,
+        Transport: profile.Transport,
+        Security: profile.Security,
+        ServerName: profile.ServerName);
 }
 
 public sealed class ProfileStore
@@ -805,7 +1007,7 @@ public sealed class SubscriptionParser
         if (profiles.Count == 0)
             throw new FormatException(rejected.Count == 0
                 ? "Подписка пуста."
-                : "Подписка не содержит поддерживаемых VLESS Reality, NaiveProxy или Mieru-профилей.");
+                : "Подписка не содержит поддерживаемых VLESS Reality/TLS, xHTTP, Hysteria2, NaiveProxy или Mieru-профилей.");
         return new SubscriptionParseResult(profiles, rejected);
     }
 
@@ -897,7 +1099,7 @@ public sealed class SubscriptionStore
 }
 
 public enum CorePreference { Auto, SingBox, Xray }
-public enum RussiaRoutingMode { AllTraffic, OnlyUnavailable }
+public enum RussiaRoutingMode { Direct, AllTraffic, OnlyUnavailable }
 public sealed record RoutingOptions(RussiaRoutingMode Mode, bool PrivateNetworksDirect);
 public sealed record AppSettings(CorePreference PreferredCore, RussiaRoutingMode RussiaRouting, bool AutoUpdateSubscriptions, bool StartMinimized, bool EnableSystemTun)
 {
@@ -939,7 +1141,22 @@ public sealed class CoreSelector(Func<string, bool>? fileExists = null)
             if (preference == CorePreference.Xray) throw new NotSupportedException("NaiveProxy поддерживается только sing-box.");
             return Installed(CoreKind.SingBox, paths.SingBox);
         }
+        if (profile.Protocol == "hysteria2")
+        {
+            return preference switch
+            {
+                CorePreference.SingBox => Installed(CoreKind.SingBox, paths.SingBox),
+                CorePreference.Xray => Installed(CoreKind.Xray, paths.Xray),
+                _ when _fileExists(paths.Xray) => new CoreSelection(CoreKind.Xray, paths.Xray),
+                _ => Installed(CoreKind.SingBox, paths.SingBox)
+            };
+        }
         if (profile.Protocol != "vless") throw new NotSupportedException($"Протокол {profile.ProtocolLabel} не поддержан.");
+        if (string.Equals(profile.Transport, "xhttp", StringComparison.OrdinalIgnoreCase))
+        {
+            if (preference == CorePreference.SingBox) throw new NotSupportedException("VLESS xHTTP требует Xray.");
+            return Installed(CoreKind.Xray, paths.Xray);
+        }
         return preference switch
         {
             CorePreference.SingBox => Installed(CoreKind.SingBox, paths.SingBox),

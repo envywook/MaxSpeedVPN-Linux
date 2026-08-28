@@ -140,46 +140,12 @@ public partial class MainWindow : Window
         catch (Exception exception) { EventText.Text = $"Ошибка запуска: {exception.Message}"; }
     }
 
-    private void ImportProfile_Click(object? sender, RoutedEventArgs e)
-    {
-        ImportErrorText.IsVisible = false;
-        ImportOverlay.IsVisible = true;
-        ProfileUriTextBox.Focus();
-    }
-
-    private void CancelImport_Click(object? sender, RoutedEventArgs e)
-    {
-        ProfileUriTextBox.Text = string.Empty;
-        ImportOverlay.IsVisible = false;
-    }
-
-    private async void ConfirmImport_Click(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var profile = new ProfileParser().ParseStored(ProfileUriTextBox.Text?.Trim() ?? string.Empty);
-            await _profileStore.UpsertAsync(profile);
-            await ReloadProfilesAsync(profile.Id);
-            EventText.Text = $"{profile.Name}: {profile.ProtocolLabel}.";
-            ProfileUriTextBox.Text = string.Empty;
-            ImportOverlay.IsVisible = false;
-            await PingAllAsync();
-        }
-        catch (Exception exception) when (exception is FormatException or IOException)
-        {
-            ImportErrorText.Text = exception.Message;
-            ImportErrorText.IsVisible = true;
-        }
-    }
-
-    private void OpenSubscriptions_Click(object? sender, RoutedEventArgs e)
+    private void OpenImport_Click(object? sender, RoutedEventArgs e)
     {
         SubscriptionErrorText.IsVisible = false;
         SubscriptionOverlay.IsVisible = true;
         SubscriptionUrlTextBox.Focus();
     }
-
-    private void GoToSubscriptions_Click(object? sender, RoutedEventArgs e) => MainTabs.SelectedIndex = 1;
 
     private async void PasteSubscriptionUrl_Click(object? sender, RoutedEventArgs e)
     {
@@ -206,15 +172,30 @@ public partial class MainWindow : Window
         SubscriptionUrlTextBox.Text = string.Empty;
     }
 
-    private async void ConfirmSubscription_Click(object? sender, RoutedEventArgs e)
+    private async void ConfirmImportSource_Click(object? sender, RoutedEventArgs e)
     {
         ConfirmSubscriptionButton.IsEnabled = false;
         try
         {
-            var subscription = SubscriptionDefinition.Create(SubscriptionNameTextBox.Text ?? string.Empty, SubscriptionUrlTextBox.Text ?? string.Empty);
-            await RefreshSubscriptionAsync(subscription, quiet: false, throwOnFailure: true);
+            var source = SubscriptionUrlTextBox.Text?.Trim() ?? string.Empty;
+            if (!Uri.TryCreate(source, UriKind.Absolute, out var uri)) throw new FormatException("Укажите корректную ссылку сервера или подписки.");
+            if (uri.Scheme is "http" or "https")
+            {
+                var subscription = SubscriptionDefinition.Create(SubscriptionNameTextBox.Text ?? string.Empty, source);
+                await RefreshSubscriptionAsync(subscription, quiet: false, throwOnFailure: true);
+                MainTabs.SelectedIndex = 1;
+            }
+            else
+            {
+                var profile = new ProfileParser().ParseStored(source);
+                var customName = SubscriptionNameTextBox.Text?.Trim();
+                if (!string.IsNullOrWhiteSpace(customName)) profile = profile with { Name = customName };
+                await _profileStore.UpsertAsync(profile);
+                await ReloadProfilesAsync(profile.Id);
+                EventText.Text = $"{profile.Name}: {profile.ProtocolLabel}.";
+                await PingAllAsync();
+            }
             CancelSubscription_Click(sender, e);
-            MainTabs.SelectedIndex = 1;
         }
         catch (Exception exception)
         {
@@ -351,7 +332,7 @@ public partial class MainWindow : Window
         var preference = CorePreferenceBox.SelectedIndex switch { 1 => CorePreference.SingBox, 2 => CorePreference.Xray, _ => CorePreference.Auto };
         _settings = new AppSettings(
             preference,
-            RussiaAllTrafficRadio.IsChecked == true ? RussiaRoutingMode.AllTraffic : RussiaRoutingMode.OnlyUnavailable,
+            RussiaDirectRadio.IsChecked == true ? RussiaRoutingMode.Direct : RussiaAllTrafficRadio.IsChecked == true ? RussiaRoutingMode.AllTraffic : RussiaRoutingMode.OnlyUnavailable,
             AutoUpdateSubscriptionsCheckBox.IsChecked == true,
             false,
             false);
@@ -364,8 +345,9 @@ public partial class MainWindow : Window
     private void ApplySettingsToUi()
     {
         CorePreferenceBox.SelectedIndex = _settings.PreferredCore switch { CorePreference.SingBox => 1, CorePreference.Xray => 2, _ => 0 };
-        RussiaAllTrafficRadio.IsChecked = true;
-        RussiaOnlyUnavailableRadio.IsChecked = false;
+        RussiaDirectRadio.IsChecked = _settings.RussiaRouting == RussiaRoutingMode.Direct;
+        RussiaAllTrafficRadio.IsChecked = _settings.RussiaRouting == RussiaRoutingMode.AllTraffic;
+        RussiaOnlyUnavailableRadio.IsChecked = _settings.RussiaRouting == RussiaRoutingMode.OnlyUnavailable;
         AutoUpdateSubscriptionsCheckBox.IsChecked = _settings.AutoUpdateSubscriptions;
     }
 

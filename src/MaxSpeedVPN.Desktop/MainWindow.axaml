@@ -7,28 +7,13 @@
         Icon="avares://MaxSpeedVPN.Desktop/Assets/maxspeedvpn.ico"
         Title="MaxSpeedVPN">
   <Grid RowDefinitions="Auto,*,Auto">
-    <Border x:Name="ImportOverlay" Grid.RowSpan="3" ZIndex="20" Background="#DC000000" IsVisible="False">
-      <Border Width="650" Padding="26" CornerRadius="18" Background="#101522" BorderBrush="#3D647BFF" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">
-        <StackPanel Spacing="14">
-          <TextBlock Text="Добавить сервер" Classes="dialogTitle" />
-          <TextBlock Text="Вставьте ссылку VLESS Reality, NaiveProxy или Mieru simple TCP" Classes="muted" />
-          <TextBox x:Name="ProfileUriTextBox" PlaceholderText="vless://… · naive+https://… · mierus://…" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="112" />
-          <TextBlock x:Name="ImportErrorText" Classes="error" IsVisible="False" TextWrapping="Wrap" />
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
-            <Button Content="Отмена" Classes="secondary" Click="CancelImport_Click" />
-            <Button Content="Сохранить" Classes="primary" Click="ConfirmImport_Click" />
-          </StackPanel>
-        </StackPanel>
-      </Border>
-    </Border>
-
     <Border x:Name="SubscriptionOverlay" Grid.RowSpan="3" ZIndex="21" Background="#DC000000" IsVisible="False">
       <Border Width="650" Padding="26" CornerRadius="18" Background="#101522" BorderBrush="#3D647BFF" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">
         <StackPanel Spacing="14">
-          <TextBlock Text="Добавить подписку" Classes="dialogTitle" />
-          <TextBlock Text="Вставьте ссылку — название можно не указывать" Classes="muted" />
+          <TextBlock Text="Добавить сервер или подписку" Classes="dialogTitle" />
+          <TextBlock Text="Вставьте ссылку VLESS, Hysteria2, NaiveProxy, Mieru или HTTPS-подписку" Classes="muted" />
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <TextBox x:Name="SubscriptionUrlTextBox" PlaceholderText="https://example.com/subscription" />
+            <TextBox x:Name="SubscriptionUrlTextBox" PlaceholderText="vless://… · hysteria2://… · https://…" />
             <Button Grid.Column="1" Content="Вставить" Classes="secondary" Click="PasteSubscriptionUrl_Click" />
           </Grid>
           <TextBox x:Name="SubscriptionNameTextBox" PlaceholderText="Название (необязательно)" />
@@ -36,7 +21,7 @@
           <TextBlock x:Name="SubscriptionErrorText" Classes="error" IsVisible="False" TextWrapping="Wrap" />
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
             <Button Content="Отмена" Classes="secondary" Click="CancelSubscription_Click" />
-            <Button x:Name="ConfirmSubscriptionButton" Content="Добавить" Classes="primary" Click="ConfirmSubscription_Click" />
+            <Button x:Name="ConfirmSubscriptionButton" Content="Добавить" Classes="primary" Click="ConfirmImportSource_Click" />
           </StackPanel>
         </StackPanel>
       </Border>
@@ -66,7 +51,7 @@
                   <PathIcon Data="M12,2 A10,10 0 1 0 22,12 A10,10 0 0 0 12,2 M12,6 L12,13" Foreground="#F5F7FF" Width="42" Height="42" />
                 </Button>
                 <TextBlock x:Name="ConnectHint" Text="Сначала добавьте сервер" Foreground="#AAB2C4" FontSize="13" HorizontalAlignment="Center" />
-                <Button Content="Добавить сервер" Classes="primary" Click="ImportProfile_Click" />
+                <Button Content="Добавить сервер или подписку" Classes="primary" Click="OpenImport_Click" />
               </StackPanel>
               <Grid Grid.Row="2" ColumnDefinitions="*,*,*" ColumnSpacing="8">
                 <StackPanel><TextBlock Text="ПРОКСИ" Classes="eyebrow"/><TextBlock Text="127.0.0.1:10808" Classes="metricValue"/></StackPanel>
@@ -87,7 +72,7 @@
                   <PathIcon Data="M13,2 L5,14 H11 L10,22 L19,9 H13 Z" Width="18" Height="18" Foreground="#DCE3FF" />
                 </Button>
                 <ToggleButton Grid.Column="2" x:Name="LivePingToggle" Content="Автопинг" Classes="live" IsCheckedChanged="LivePingToggle_Changed" />
-                <Button Grid.Column="3" Content="+ Сервер" Classes="primary" Click="ImportProfile_Click" />
+                <Button Grid.Column="3" Content="+ Сервер / подписка" Classes="primary" Click="OpenImport_Click" />
               </Grid>
               <Grid Grid.Row="1" Margin="0,18,0,0">
                 <ListBox x:Name="ServersList" SelectionChanged="ServersList_SelectionChanged" Background="Transparent">
@@ -107,8 +92,8 @@
                   <TextBlock Text="Серверов пока нет" Foreground="#E4E8F1" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" />
                   <TextBlock Text="Добавьте отдельную ссылку или импортируйте подписку" Classes="muted" HorizontalAlignment="Center" />
                   <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
-                    <Button Content="Добавить сервер" Classes="primary" Click="ImportProfile_Click" />
-                    <Button Content="Открыть подписки" Classes="secondary" Click="GoToSubscriptions_Click" />
+                    <Button Content="Добавить сервер или подписку" Classes="primary" Click="OpenImport_Click" />
+
                   </StackPanel>
                 </StackPanel>
               </Grid>
@@ -121,7 +106,7 @@
         <Grid Margin="2,12,2,0" RowDefinitions="Auto,*">
           <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,16">
             <StackPanel Spacing="4"><TextBlock Text="Подписки" Classes="pageTitle"/><TextBlock x:Name="SubscriptionCountText" Text="0 добавлено" Classes="muted"/></StackPanel>
-            <Button Grid.Column="1" Content="+ Добавить подписку" Classes="primary" Click="OpenSubscriptions_Click" />
+            <Button Grid.Column="1" Content="+ Добавить сервер или подписку" Classes="primary" Click="OpenImport_Click" />
           </Grid>
           <Border Grid.Row="1" Classes="panel" Padding="20">
             <Grid>
@@ -140,7 +125,7 @@
               <StackPanel x:Name="EmptySubscriptionsState" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="11">
                 <TextBlock Text="Подписок пока нет" Foreground="#E4E8F1" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
                 <TextBlock Text="Вставьте ссылку Remnawave или обычную base64/plain подписку" Classes="muted" HorizontalAlignment="Center" />
-                <Button Content="Добавить подписку" Classes="primary" Click="OpenSubscriptions_Click" HorizontalAlignment="Center" />
+                <Button Content="Добавить сервер или подписку" Classes="primary" Click="OpenImport_Click" HorizontalAlignment="Center" />
               </StackPanel>
             </Grid>
           </Border>
@@ -155,7 +140,7 @@
               <StackPanel Spacing="12"><TextBlock Text="Ядро" Classes="sectionTitle"/><ComboBox x:Name="CorePreferenceBox" SelectedIndex="0"><ComboBoxItem Content="Автоматически"/><ComboBoxItem Content="sing-box"/><ComboBoxItem Content="Xray"/></ComboBox><TextBlock Text="Автовыбор учитывает протокол профиля и доступные локальные ядра." Classes="muted" TextWrapping="Wrap"/></StackPanel>
             </Border>
             <Border Classes="panel" Padding="22">
-              <StackPanel Spacing="11"><TextBlock Text="Маршрутизация" Classes="sectionTitle"/><RadioButton x:Name="RussiaAllTrafficRadio" Content="Весь трафик через proxy, локальные сети напрямую" GroupName="RussiaRouting" IsChecked="True"/><RadioButton x:Name="RussiaOnlyUnavailableRadio" Content="Только недоступные сайты — пока недоступно" GroupName="RussiaRouting" IsEnabled="False"/><CheckBox x:Name="PrivateNetworksDirectCheckBox" Content="Локальные и частные сети напрямую" IsChecked="True" IsEnabled="False"/></StackPanel>
+              <StackPanel Spacing="11"><TextBlock Text="Маршрутизация локального proxy" Classes="sectionTitle"/><RadioButton x:Name="RussiaDirectRadio" Content="Напрямую — локальный proxy обходит VPN-сервер" GroupName="RussiaRouting"/><RadioButton x:Name="RussiaAllTrafficRadio" Content="Через VPN — весь трафик локального proxy, локальные сети напрямую" GroupName="RussiaRouting" IsChecked="True"/><RadioButton x:Name="RussiaOnlyUnavailableRadio" Content="Только недоступные сайты — пока недоступно" GroupName="RussiaRouting" IsEnabled="False"/><CheckBox x:Name="PrivateNetworksDirectCheckBox" Content="Локальные и частные сети напрямую" IsChecked="True" IsEnabled="False"/><TextBlock Text="Это правила для proxy 127.0.0.1:10808. System-wide TUN ещё не включён." Classes="muted" TextWrapping="Wrap"/></StackPanel>
             </Border>
             <Border Classes="panel" Padding="22">
               <StackPanel Spacing="11"><TextBlock Text="Подписки" Classes="sectionTitle"/><CheckBox x:Name="AutoUpdateSubscriptionsCheckBox" Content="Обновлять подписки при запуске" IsChecked="True"/><TextBlock Text="Локальный идентификатор установки создаётся автоматически и не показывается в интерфейсе." Classes="muted" TextWrapping="Wrap"/></StackPanel>
