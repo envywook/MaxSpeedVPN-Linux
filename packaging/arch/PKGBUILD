@@ -1,5 +1,5 @@
 pkgname=maxspeedvpn-linux
-pkgver=0.3.0
+pkgver=0.4.0
 pkgrel=1
 pkgdesc='Standalone MaxSpeedVPN multi-protocol proxy client for Linux'
 arch=('x86_64')
@@ -10,6 +10,7 @@ makedepends=('dotnet-sdk>=10' 'imagemagick')
 options=('!strip' '!debug')
 _singbox_version=1.13.19
 _mieru_version=3.36.0
+_xray_version=26.3.27
 _source_commit='c395c67611f8e6ad58d3e5603c39cb22b3373d6a'
 source=(
   "maxspeedvpn-${pkgver}.tar.gz::https://github.com/envywook/MaxSpeedVPN-Linux/archive/${_source_commit}.tar.gz"
@@ -17,6 +18,8 @@ source=(
   "sing-box-LICENSE::https://raw.githubusercontent.com/SagerNet/sing-box/v${_singbox_version}/LICENSE"
   "mieru-${_mieru_version}-linux-amd64.tar.gz::https://github.com/enfein/mieru/releases/download/v${_mieru_version}/mieru_${_mieru_version}_linux_amd64.tar.gz"
   "mieru-LICENSE::https://raw.githubusercontent.com/enfein/mieru/v${_mieru_version}/LICENSE"
+  "xray-${_xray_version}-linux-amd64.zip::https://github.com/XTLS/Xray-core/releases/download/v${_xray_version}/Xray-linux-64.zip"
+  "xray-LICENSE::https://raw.githubusercontent.com/XTLS/Xray-core/v${_xray_version}/LICENSE"
   "NotoSans-Regular.ttf::https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf"
   "Noto-LICENSE::https://raw.githubusercontent.com/notofonts/noto-fonts/main/LICENSE"
 )
@@ -26,6 +29,8 @@ sha256sums=(
   '650d5e3b99a446fb38e820fa87a49562e0c79eab868fff58618ac487a58e554c'
   'b3f8b32a8b5728c01f31e33ff7a71b3b33f3fd8e1341684fcb98d5ecebb7db7a'
   '3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986'
+  '23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae'
+  '1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5'
   'b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5'
   '0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb'
 )
@@ -55,6 +60,9 @@ package() {
   install -Dm755 "$srcdir/sing-box-${_singbox_version}-linux-amd64/libcronet.so" \
     "$pkgdir/opt/maxspeedvpn/bin/libcronet.so"
   install -Dm755 "$srcdir/mieru" "$pkgdir/opt/maxspeedvpn/bin/mieru"
+  install -Dm755 "$srcdir/xray" "$pkgdir/opt/maxspeedvpn/bin/xray"
+  install -Dm644 "$srcdir/geoip.dat" "$pkgdir/opt/maxspeedvpn/bin/geoip.dat"
+  install -Dm644 "$srcdir/geosite.dat" "$pkgdir/opt/maxspeedvpn/bin/geosite.dat"
   install -Dm644 "$srcdir/NotoSans-Regular.ttf" "$pkgdir/usr/share/fonts/maxspeedvpn/NotoSans-Regular.ttf"
   install -Dm755 "$srcdir/app/packaging/arch/maxspeedvpn" "$pkgdir/usr/bin/maxspeedvpn"
   install -Dm644 "$srcdir/app/packaging/arch/maxspeedvpn.desktop" "$pkgdir/usr/share/applications/maxspeedvpn.desktop"
@@ -67,5 +75,6 @@ package() {
   install -Dm644 "$srcdir/app/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 "$srcdir/sing-box-LICENSE" "$pkgdir/usr/share/licenses/$pkgname/sing-box-LICENSE"
   install -Dm644 "$srcdir/mieru-LICENSE" "$pkgdir/usr/share/licenses/$pkgname/mieru-LICENSE"
+  install -Dm644 "$srcdir/xray-LICENSE" "$pkgdir/usr/share/licenses/$pkgname/xray-LICENSE"
   install -Dm644 "$srcdir/Noto-LICENSE" "$pkgdir/usr/share/licenses/$pkgname/Noto-LICENSE"
 }

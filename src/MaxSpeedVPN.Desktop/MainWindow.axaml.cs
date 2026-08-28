@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -12,51 +13,65 @@ public partial class MainWindow : Window
     private ConnectionController? _controller;
     private IAsyncDisposable? _activeRuntime;
     private readonly ProfileStore _profileStore;
+    private readonly SubscriptionStore _subscriptionStore;
+    private readonly SettingsStore _settingsStore;
+    private readonly HwidStore _hwidStore;
     private readonly LiveLatencyMonitor _latencyMonitor;
-    private readonly string _enginePath;
-    private readonly string _mieruPath;
+    private readonly CorePaths _corePaths;
+    private readonly CoreSelector _coreSelector = new();
+    private readonly SubscriptionClient _subscriptionClient = new();
     private readonly ObservableCollection<ServerRow> _servers = [];
+    private readonly ObservableCollection<SubscriptionRow> _subscriptions = [];
     private IReadOnlyList<StoredProfile> _profiles = [];
+    private IReadOnlyList<SubscriptionDefinition> _subscriptionDefinitions = [];
     private StoredProfile? _selected;
+    private AppSettings _settings = AppSettings.Default;
     private bool _shutdownStarted;
 
     public MainWindow()
     {
         InitializeComponent();
-        _enginePath = ResolveBundled("sing-box");
-        _mieruPath = ResolveBundled("mieru");
-        _profileStore = new ProfileStore(Path.Combine(AppPaths.DataDirectory(), "profiles"));
+        _corePaths = new CorePaths(ResolveCore("sing-box"), ResolveCore("xray"), ResolveCore("mieru"));
+        var data = AppPaths.DataDirectory();
+        _profileStore = new ProfileStore(Path.Combine(data, "profiles"));
+        _subscriptionStore = new SubscriptionStore(Path.Combine(data, "subscriptions"));
+        _settingsStore = new SettingsStore(Path.Combine(data, "config"));
+        _hwidStore = new HwidStore(Path.Combine(data, "device"));
         _latencyMonitor = new LiveLatencyMonitor(new TcpLatencyProbe(), TimeSpan.FromSeconds(5));
         _latencyMonitor.Updated += snapshot => Avalonia.Threading.Dispatcher.UIThread.Post(() => RenderLatencies(snapshot));
         ServersList.ItemsSource = _servers;
+        SubscriptionsList.ItemsSource = _subscriptions;
         Opened += OnOpened;
         Closing += OnClosing;
-        RenderEngineStatus();
     }
 
-    private static string ResolveBundled(string name)
+    private static string ResolveCore(string name)
     {
         var bundled = Path.Combine(AppContext.BaseDirectory, "bin", name);
         if (File.Exists(bundled)) return bundled;
-        return name == "sing-box" ? "/usr/bin/sing-box" : "/usr/bin/mieru";
+        return $"/usr/bin/{name}";
     }
-
 
     private async void OnOpened(object? sender, EventArgs e)
     {
-        await ReloadProfilesAsync();
-        await _latencyMonitor.StartAsync(() => _profiles);
-        LivePingToggle.IsChecked = true;
-    }
-
-    private void RenderEngineStatus()
-    {
-        var singBox = File.Exists(_enginePath);
-        var mieru = File.Exists(_mieruPath);
-        EngineStatusText.Text = singBox ? (mieru ? "sing-box готов · Mieru установлен" : "sing-box готов") : "sing-box не найден";
-        EngineStatusText.Foreground = Brush.Parse(singBox ? "#A9EBC9" : "#FF9AAB");
-        EngineDot.Fill = Brush.Parse(singBox ? "#42D791" : "#FF6378");
-        UpdateConnectAvailability();
+        try
+        {
+            _settings = await _settingsStore.LoadAsync();
+            if (_settings.RussiaRouting == RussiaRoutingMode.OnlyUnavailable)
+            {
+                _settings = _settings with { RussiaRouting = RussiaRoutingMode.AllTraffic };
+                await _settingsStore.SaveAsync(_settings);
+                EventText.Text = "Устаревший региональный режим отключён: используется проверенный базовый маршрут.";
+            }
+            ApplySettingsToUi();
+            HwidTextBox.Text = await _hwidStore.GetOrCreateAsync();
+            await ReloadProfilesAsync();
+            await ReloadSubscriptionsAsync();
+            if (_settings.AutoUpdateSubscriptions)
+                foreach (var subscription in _subscriptionDefinitions) await RefreshSubscriptionAsync(subscription, quiet: true);
+            LivePingToggle.IsChecked = false;
+        }
+        catch (Exception exception) { EventText.Text = $"Ошибка инициализации: {exception.Message}"; }
     }
 
     private async Task ReloadProfilesAsync(string? selectId = null)
@@ -66,15 +81,26 @@ public partial class MainWindow : Window
         _servers.Clear();
         foreach (var profile in _profiles) _servers.Add(ServerRow.From(profile));
         ServerCountText.Text = $"{_profiles.Count} сохранено";
+        EmptyServersState.IsVisible = _profiles.Count == 0;
+        ServersList.IsVisible = _profiles.Count > 0;
         if (_profiles.Count == 0)
         {
             _selected = null;
-            SelectedProtocolText.Text = "—";
+            SelectedCoreText.Text = "—";
             SelectedLatencyText.Text = "—";
+            UpdateConnectAvailability();
             return;
         }
         var index = Math.Max(0, _profiles.ToList().FindIndex(profile => profile.Id == current));
         ServersList.SelectedIndex = index;
+    }
+
+    private async Task ReloadSubscriptionsAsync()
+    {
+        _subscriptionDefinitions = await _subscriptionStore.LoadAsync();
+        _subscriptions.Clear();
+        foreach (var item in _subscriptionDefinitions) _subscriptions.Add(SubscriptionRow.From(item));
+        SubscriptionCountText.Text = $"{_subscriptions.Count} добавлено";
     }
 
     private async void Connect_Click(object? sender, RoutedEventArgs e)
@@ -87,24 +113,28 @@ public partial class MainWindow : Window
                 return;
             }
             if (_selected is null) return;
-            if (_selected.Protocol == "mieru")
+            var selection = _coreSelector.Select(_selected, _settings.PreferredCore, _corePaths);
+            if (selection.Kind == CoreKind.Mieru)
             {
-                EventText.Text = "Mieru импортирован, но нативный runtime в этом alpha пока не запускается: нужен отдельный lifecycle smoke.";
+                EventText.Text = "Mieru импортирован, но Connect остаётся отключён до отдельного lifecycle smoke.";
                 return;
             }
             if (_activeRuntime is not null) await _activeRuntime.DisposeAsync();
-            var runtime = new StoredSingBoxRuntime(_enginePath, Path.Combine(AppPaths.DataDirectory(), "runtime"), _selected);
-            _activeRuntime = runtime;
-            _controller = new ConnectionController(runtime);
+            var runtimeDirectory = Path.Combine(AppPaths.DataDirectory(), "runtime");
+            var routing = new RoutingOptions(_settings.RussiaRouting, PrivateNetworksDirectCheckBox.IsChecked == true);
+            _activeRuntime = selection.Kind switch
+            {
+                CoreKind.Xray => new StoredXrayRuntime(selection.Executable, runtimeDirectory, _selected, routing),
+                _ => new StoredSingBoxRuntime(selection.Executable, runtimeDirectory, _selected, routing)
+            };
+            _controller = new ConnectionController((IProxyRuntime)_activeRuntime);
             _controller.StateChanged += state => Avalonia.Threading.Dispatcher.UIThread.Post(() => RenderState(state));
-            await runtime.StartAsync();
+            var runtimeProfile = _selected.RuntimeProfile ??
+                new VpnProfile(_selected.Id, _selected.Name, _selected.Host, _selected.Port,
+                    "00000000-0000-0000-0000-000000000000", "none", _selected.Host, "chrome", string.Empty, string.Empty);
+            await _controller.ConnectAsync(runtimeProfile);
         }
-        catch (Exception exception)
-        {
-            EventText.Text = exception is FileNotFoundException
-                ? "sing-box не найден. Переустановите полный пакет MaxSpeedVPN."
-                : $"Ошибка запуска: {exception.Message}";
-        }
+        catch (Exception exception) { EventText.Text = $"Ошибка запуска: {exception.Message}"; }
     }
 
     private void ImportProfile_Click(object? sender, RoutedEventArgs e)
@@ -127,7 +157,7 @@ public partial class MainWindow : Window
             var profile = new ProfileParser().ParseStored(ProfileUriTextBox.Text?.Trim() ?? string.Empty);
             await _profileStore.UpsertAsync(profile);
             await ReloadProfilesAsync(profile.Id);
-            EventText.Text = $"{profile.Name} сохранён как {profile.ProtocolLabel}, без ярлыка Custom.";
+            EventText.Text = $"{profile.Name}: {profile.ProtocolLabel}.";
             ProfileUriTextBox.Text = string.Empty;
             ImportOverlay.IsVisible = false;
             await PingAllAsync();
@@ -139,21 +169,80 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OpenSubscriptions_Click(object? sender, RoutedEventArgs e)
+    {
+        SubscriptionErrorText.IsVisible = false;
+        SubscriptionOverlay.IsVisible = true;
+        SubscriptionNameTextBox.Focus();
+    }
+
+    private void CancelSubscription_Click(object? sender, RoutedEventArgs e)
+    {
+        SubscriptionOverlay.IsVisible = false;
+        SubscriptionNameTextBox.Text = string.Empty;
+        SubscriptionUrlTextBox.Text = string.Empty;
+    }
+
+    private async void ConfirmSubscription_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var subscription = SubscriptionDefinition.Create(SubscriptionNameTextBox.Text ?? string.Empty, SubscriptionUrlTextBox.Text ?? string.Empty);
+            await _subscriptionStore.UpsertAsync(subscription);
+            await ReloadSubscriptionsAsync();
+            await RefreshSubscriptionAsync(subscription, quiet: false);
+            CancelSubscription_Click(sender, e);
+            MainTabs.SelectedIndex = 1;
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException or HttpRequestException or IOException)
+        {
+            SubscriptionErrorText.Text = exception.Message;
+            SubscriptionErrorText.IsVisible = true;
+        }
+    }
+
+    private async void RefreshSubscription_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string id }) return;
+        var definition = _subscriptionDefinitions.FirstOrDefault(item => item.Id == id);
+        if (definition is not null) await RefreshSubscriptionAsync(definition, quiet: false);
+    }
+
+    private async Task RefreshSubscriptionAsync(SubscriptionDefinition subscription, bool quiet)
+    {
+        try
+        {
+            if (!quiet) EventText.Text = $"Обновляем {subscription.Name}…";
+            var hwid = HwidTextBox.Text ?? await _hwidStore.GetOrCreateAsync();
+            var payload = await _subscriptionClient.DownloadAsync(subscription.Url, hwid);
+            var result = new SubscriptionParser().Parse(payload);
+            foreach (var profile in result.Profiles) await _profileStore.UpsertAsync(profile);
+            await _subscriptionStore.UpsertAsync(subscription with { LastUpdated = DateTimeOffset.UtcNow });
+            await ReloadProfilesAsync();
+            await ReloadSubscriptionsAsync();
+            if (!quiet) EventText.Text = $"{subscription.Name}: добавлено/обновлено {result.Profiles.Count}, пропущено {result.RejectedLines.Count}.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or IOException)
+        {
+            EventText.Text = $"Не удалось обновить {subscription.Name}: {exception.Message}";
+        }
+    }
+
     private void ServersList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (ServersList.SelectedIndex < 0 || ServersList.SelectedIndex >= _profiles.Count) return;
         _selected = _profiles[ServersList.SelectedIndex];
-        SelectedProtocolText.Text = _selected.ProtocolLabel;
-        ModeBadgeText.Text = _selected.Protocol == "mieru" ? "NATIVE CORE" : "LOCAL PROXY";
-        ConnectHint.Text = _selected.Protocol switch
-        {
-            "vless" or "naive" => "Запустить локальный SOCKS/HTTP proxy",
-            "mieru" => "Mieru connect появится после lifecycle smoke",
-            _ => "Протокол недоступен"
-        };
         var row = _servers.FirstOrDefault(item => item.Id == _selected.Id);
         SelectedLatencyText.Text = row?.LatencyText ?? "—";
+        RenderSelectedCore();
         UpdateConnectAvailability();
+    }
+
+    private void RenderSelectedCore()
+    {
+        if (_selected is null) { SelectedCoreText.Text = "—"; return; }
+        try { SelectedCoreText.Text = _coreSelector.Select(_selected, _settings.PreferredCore, _corePaths).Kind.ToString(); }
+        catch { SelectedCoreText.Text = "недоступно"; }
     }
 
     private async void PingAll_Click(object? sender, RoutedEventArgs e) => await PingAllAsync();
@@ -163,9 +252,9 @@ public partial class MainWindow : Window
         PingAllButton.IsEnabled = false;
         try
         {
-            EventText.Text = "Проверяем TCP-доступность всех endpoint…";
+            EventText.Text = "Измеряем задержку endpoint…";
             await _latencyMonitor.RefreshAsync(_profiles);
-            EventText.Text = "TCP-проверка всех endpoint обновлена.";
+            EventText.Text = "Пинг обновлён.";
         }
         finally { PingAllButton.IsEnabled = true; }
     }
@@ -175,12 +264,12 @@ public partial class MainWindow : Window
         if (LivePingToggle.IsChecked == true)
         {
             await _latencyMonitor.StartAsync(() => _profiles);
-            EventText.Text = "Live TCP check включён: проверка endpoint каждые 5 секунд.";
+            EventText.Text = "real-time пинг включён: интервал 5 секунд.";
         }
         else
         {
             await _latencyMonitor.StopAsync();
-            EventText.Text = "Live TCP check остановлен.";
+            EventText.Text = "real-time пинг остановлен.";
         }
     }
 
@@ -197,29 +286,72 @@ public partial class MainWindow : Window
         StatusText.Text = state switch
         {
             ConnectionState.Preparing => "Подготовка",
-            ConnectionState.Connecting => "Запуск прокси…",
-            ConnectionState.Connected => "Прокси активен",
+            ConnectionState.Connecting => "Запуск proxy…",
+            ConnectionState.Connected => "Proxy активен",
             ConnectionState.Disconnecting => "Отключение…",
-            ConnectionState.Error => "Ошибка движка",
+            ConnectionState.Error => "Ошибка ядра",
             _ => "Не подключено"
         };
-        ConnectHint.Text = state == ConnectionState.Connected ? "Остановить прокси" : "Запустить локальный прокси";
+        ConnectHint.Text = state == ConnectionState.Connected ? "Остановить proxy" : "Запустить локальный proxy";
         UpdateConnectAvailability();
         EventText.Text = state switch
         {
-            ConnectionState.Connected => "SOCKS/HTTP proxy слушает 127.0.0.1:10808. TUN не включается без проверенного privileged helper.",
-            ConnectionState.Disconnected => "Прокси остановлен, дочерний процесс завершён.",
-            ConnectionState.Error => _controller?.ErrorMessage ?? "sing-box неожиданно остановился.",
-            _ => "Запускаем sing-box и проверяем listener…"
+            ConnectionState.Connected => "SOCKS/HTTP proxy слушает 127.0.0.1:10808. System TUN не включён.",
+            ConnectionState.Disconnected => "Proxy остановлен, дочерний процесс завершён.",
+            ConnectionState.Error => _controller?.ErrorMessage ?? "Ядро неожиданно остановилось.",
+            _ => "Запускаем выбранное ядро…"
         };
     }
 
     private void UpdateConnectAvailability()
     {
         var busy = _controller?.State is ConnectionState.Preparing or ConnectionState.Connecting or ConnectionState.Disconnecting;
-        ConnectButton.IsEnabled = !busy && _selected is not null
-            && _selected.Protocol is "vless" or "naive"
-            && File.Exists(_enginePath);
+        var available = false;
+        if (_selected is not null && _selected.Protocol != "mieru")
+        {
+            try { _coreSelector.Select(_selected, _settings.PreferredCore, _corePaths); available = true; }
+            catch { }
+        }
+        ConnectButton.IsEnabled = !busy && available;
+    }
+
+    private void OpenSettings_Click(object? sender, RoutedEventArgs e) => MainTabs.SelectedIndex = 2;
+
+    private async void CopyHwid_Click(object? sender, RoutedEventArgs e)
+    {
+        var hwid = HwidTextBox.Text;
+        if (string.IsNullOrWhiteSpace(hwid)) return;
+        var clipboard = Clipboard;
+        if (clipboard is not null)
+        {
+            var transfer = new Avalonia.Input.DataTransfer();
+            transfer.Add(Avalonia.Input.DataTransferItem.CreateText(hwid));
+            await clipboard.SetDataAsync(transfer);
+        }
+        EventText.Text = "HWID скопирован.";
+    }
+
+    private async void SaveSettings_Click(object? sender, RoutedEventArgs e)
+    {
+        var preference = CorePreferenceBox.SelectedIndex switch { 1 => CorePreference.SingBox, 2 => CorePreference.Xray, _ => CorePreference.Auto };
+        _settings = new AppSettings(
+            preference,
+            RussiaAllTrafficRadio.IsChecked == true ? RussiaRoutingMode.AllTraffic : RussiaRoutingMode.OnlyUnavailable,
+            AutoUpdateSubscriptionsCheckBox.IsChecked == true,
+            false,
+            false);
+        await _settingsStore.SaveAsync(_settings);
+        RenderSelectedCore();
+        UpdateConnectAvailability();
+        EventText.Text = "Настройки сохранены. Они применятся при следующем подключении.";
+    }
+
+    private void ApplySettingsToUi()
+    {
+        CorePreferenceBox.SelectedIndex = _settings.PreferredCore switch { CorePreference.SingBox => 1, CorePreference.Xray => 2, _ => 0 };
+        RussiaAllTrafficRadio.IsChecked = true;
+        RussiaOnlyUnavailableRadio.IsChecked = false;
+        AutoUpdateSubscriptionsCheckBox.IsChecked = _settings.AutoUpdateSubscriptions;
     }
 
     public void ShowFromTray()
@@ -245,6 +377,7 @@ public partial class MainWindow : Window
         _shutdownStarted = true;
         await _latencyMonitor.DisposeAsync();
         if (_activeRuntime is not null) await _activeRuntime.DisposeAsync();
+        _subscriptionClient.Dispose();
         Closing -= OnClosing;
         Close();
     }
@@ -256,7 +389,7 @@ public sealed class ServerRow : System.ComponentModel.INotifyPropertyChanged
     public required string Name { get; init; }
     public required string Endpoint { get; init; }
     public required string ProtocolLabel { get; init; }
-    public string ProtocolCode => ProtocolLabel switch { "VLESS Reality" => "VR", "NaiveProxy" => "NP", "Mieru" => "MR", _ => "PX" };
+    public string ProtocolCode => ProtocolLabel switch { "VLESS Reality" => "VR", "NaiveProxy" => "NP", "Mieru simple TCP" => "MR", _ => "PX" };
     private string _latencyText = "—";
     private string _checkedText = "не проверен";
     public string LatencyText { get => _latencyText; private set { _latencyText = value; PropertyChanged?.Invoke(this, new(nameof(LatencyText))); } }
@@ -268,4 +401,19 @@ public sealed class ServerRow : System.ComponentModel.INotifyPropertyChanged
         LatencyText = latency.IsReachable ? $"{latency.Milliseconds} ms" : "timeout";
         CheckedText = latency.CheckedAt.ToLocalTime().ToString("HH:mm:ss");
     }
+}
+
+public sealed class SubscriptionRow
+{
+    public required string Id { get; init; }
+    public required string Name { get; init; }
+    public required string DisplayHost { get; init; }
+    public required string UpdatedText { get; init; }
+    public static SubscriptionRow From(SubscriptionDefinition item) => new()
+    {
+        Id = item.Id,
+        Name = item.Name,
+        DisplayHost = Uri.TryCreate(item.Url, UriKind.Absolute, out var uri) ? uri.Host : "некорректный URL",
+        UpdatedText = item.LastUpdated is null ? "ещё не обновлялась" : $"обновлено {item.LastUpdated.Value.ToLocalTime():dd.MM.yyyy HH:mm}"
+    };
 }

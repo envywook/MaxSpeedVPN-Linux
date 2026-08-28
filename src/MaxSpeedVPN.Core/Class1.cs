@@ -534,18 +534,41 @@ public sealed class SingBoxRuntime : ExternalCoreRuntime
         : base(executable, runtimeDirectory, configWriter, "sing-box", localPort, startupTimeout) { }
 }
 
-public sealed class StoredSingBoxConfigWriter(StoredProfile profile, bool enableTun = false) : ICoreConfigWriter
+public sealed class StoredSingBoxConfigWriter(StoredProfile profile, RoutingOptions? routing = null, bool enableTun = false) : ICoreConfigWriter
 {
     private readonly SingBoxConfigWriter _writer = new();
-    public string Write(VpnProfile ignored, int localPort) => _writer.Write(profile, localPort, enableTun);
+    public string Write(VpnProfile ignored, int localPort)
+    {
+        EnsureSupportedRouting(routing);
+        var json = _writer.Write(profile, localPort, enableTun);
+        return routing is { Mode: RussiaRoutingMode.AllTraffic, PrivateNetworksDirect: true }
+            ? AddSingBoxPrivateDirectRule(json)
+            : json;
+    }
     public void AddRunArguments(System.Diagnostics.ProcessStartInfo startInfo, string configPath) => _writer.AddRunArguments(startInfo, configPath);
+
+    private static string AddSingBoxPrivateDirectRule(string json)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        node["route"]!["rules"] = new System.Text.Json.Nodes.JsonArray
+        {
+            new System.Text.Json.Nodes.JsonObject { ["ip_is_private"] = true, ["action"] = "route", ["outbound"] = "direct" }
+        };
+        return node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private static void EnsureSupportedRouting(RoutingOptions? options)
+    {
+        if (options?.Mode == RussiaRoutingMode.OnlyUnavailable)
+            throw new NotSupportedException("Маршрутизация только недоступных ресурсов требует закреплённого и проверенного регионального ruleset.");
+    }
 }
 
 public sealed class StoredSingBoxRuntime : ExternalCoreRuntime
 {
     private readonly VpnProfile _placeholder;
-    public StoredSingBoxRuntime(string executable, string runtimeDirectory, StoredProfile profile, bool enableTun = false, int localPort = 10808, TimeSpan? startupTimeout = null)
-        : base(executable, runtimeDirectory, new StoredSingBoxConfigWriter(profile, enableTun), "sing-box", localPort, startupTimeout)
+    public StoredSingBoxRuntime(string executable, string runtimeDirectory, StoredProfile profile, RoutingOptions? routing = null, bool enableTun = false, int localPort = 10808, TimeSpan? startupTimeout = null)
+        : base(executable, runtimeDirectory, new StoredSingBoxConfigWriter(profile, routing, enableTun), "sing-box", localPort, startupTimeout)
     {
         _placeholder = profile.RuntimeProfile ?? new VpnProfile(profile.Id, profile.Name, profile.Host, profile.Port, "00000000-0000-0000-0000-000000000000", "none", profile.Host, "chrome", "", "");
     }
@@ -556,6 +579,41 @@ public sealed class XrayRuntime : ExternalCoreRuntime
 {
     public XrayRuntime(string executable, string runtimeDirectory, XrayConfigWriter configWriter, int localPort = 10808, TimeSpan? startupTimeout = null)
         : base(executable, runtimeDirectory, configWriter, "Xray", localPort, startupTimeout) { }
+}
+
+public sealed class StoredXrayConfigWriter(StoredProfile profile, RoutingOptions? routing = null) : ICoreConfigWriter
+{
+    private readonly XrayConfigWriter _writer = new();
+    public string Write(VpnProfile ignored, int localPort)
+    {
+        if (routing?.Mode == RussiaRoutingMode.OnlyUnavailable)
+            throw new NotSupportedException("Маршрутизация только недоступных ресурсов требует закреплённого и проверенного регионального ruleset.");
+        var json = _writer.Write(profile.RuntimeProfile ?? throw new NotSupportedException("Xray поддерживает только VLESS Reality профили."), localPort);
+        if (routing is not { Mode: RussiaRoutingMode.AllTraffic, PrivateNetworksDirect: true }) return json;
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        node["routing"]!["rules"] = new System.Text.Json.Nodes.JsonArray
+        {
+            new System.Text.Json.Nodes.JsonObject
+            {
+                ["type"] = "field",
+                ["ip"] = new System.Text.Json.Nodes.JsonArray("geoip:private"),
+                ["outboundTag"] = "direct"
+            }
+        };
+        return node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+    }
+    public void AddRunArguments(System.Diagnostics.ProcessStartInfo startInfo, string configPath) => _writer.AddRunArguments(startInfo, configPath);
+}
+
+public sealed class StoredXrayRuntime : ExternalCoreRuntime
+{
+    private readonly VpnProfile _profile;
+    public StoredXrayRuntime(string executable, string runtimeDirectory, StoredProfile profile, RoutingOptions? routing = null, int localPort = 10808, TimeSpan? startupTimeout = null)
+        : base(executable, runtimeDirectory, new StoredXrayConfigWriter(profile, routing), "Xray", localPort, startupTimeout)
+    {
+        _profile = profile.RuntimeProfile ?? throw new NotSupportedException("Xray поддерживает только VLESS Reality профили.");
+    }
+    public Task StartAsync(CancellationToken cancellationToken = default) => base.StartAsync(_profile, cancellationToken);
 }
 
 public static class MieruRuntimeAdapter
@@ -665,6 +723,202 @@ public sealed class ProfileStore
         Directory.CreateDirectory(path);
         if (!OperatingSystem.IsWindows())
             File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+}
+
+public sealed class HwidStore
+{
+    private readonly string _directory;
+    private readonly string _path;
+
+    public HwidStore(string directory)
+    {
+        _directory = directory;
+        _path = Path.Combine(directory, "hwid");
+    }
+
+    public async Task<string> GetOrCreateAsync(CancellationToken cancellationToken = default)
+    {
+        if (File.Exists(_path))
+            return (await File.ReadAllTextAsync(_path, cancellationToken)).Trim();
+        PrivateStorage.EnsureDirectory(_directory);
+        var value = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(18))
+            .TrimEnd('/').Replace('+', '-').Replace('/', '-');
+        await PrivateStorage.WriteTextAtomicAsync(_path, value, cancellationToken);
+        return value;
+    }
+}
+
+public sealed record SubscriptionDefinition(string Id, string Name, string Url, DateTimeOffset? LastUpdated = null)
+{
+    public static SubscriptionDefinition Create(string name, string url)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Название подписки обязательно.", nameof(name));
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
+            throw new FormatException("Подписка должна использовать http:// или https://.");
+        var id = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(url)))[..16].ToLowerInvariant();
+        return new SubscriptionDefinition(id, name.Trim(), url.Trim());
+    }
+}
+
+public sealed record SubscriptionParseResult(IReadOnlyList<StoredProfile> Profiles, IReadOnlyList<string> RejectedLines);
+
+public sealed class SubscriptionParser
+{
+    private readonly ProfileParser _profileParser = new();
+
+    public SubscriptionParseResult Parse(string payload)
+    {
+        var text = DecodePayload(payload);
+        var profiles = new List<StoredProfile>();
+        var rejected = new List<string>();
+        foreach (var line in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            try { profiles.Add(_profileParser.ParseStored(line)); }
+            catch (FormatException) { rejected.Add(line); }
+        }
+        return new SubscriptionParseResult(profiles, rejected);
+    }
+
+    private static string DecodePayload(string payload)
+    {
+        var trimmed = payload.Trim();
+        if (trimmed.Contains("://", StringComparison.Ordinal)) return trimmed;
+        try
+        {
+            var normalized = trimmed.Replace('-', '+').Replace('_', '/').PadRight((trimmed.Length + 3) / 4 * 4, '=');
+            return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(normalized));
+        }
+        catch (FormatException) { return trimmed; }
+    }
+}
+
+public sealed class SubscriptionClient : IDisposable
+{
+    private readonly System.Net.Http.HttpClient _httpClient;
+    public SubscriptionClient(System.Net.Http.HttpClient? httpClient = null) =>
+        _httpClient = httpClient ?? new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+
+    public async Task<string> DownloadAsync(string url, string hwid, CancellationToken cancellationToken = default)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
+            throw new FormatException("Подписка должна использовать http:// или https://.");
+        using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, uri);
+        request.Headers.TryAddWithoutValidation("X-Device-ID", hwid);
+        using var response = await _httpClient.SendAsync(request, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    public void Dispose() => _httpClient.Dispose();
+}
+
+public sealed class SubscriptionStore
+{
+    private readonly string _directory;
+    private readonly string _path;
+    private static readonly System.Text.Json.JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    public SubscriptionStore(string directory)
+    {
+        _directory = directory;
+        _path = Path.Combine(directory, "subscriptions.json");
+    }
+
+    public async Task<IReadOnlyList<SubscriptionDefinition>> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(_path)) return [];
+        var json = await File.ReadAllTextAsync(_path, cancellationToken);
+        return System.Text.Json.JsonSerializer.Deserialize<List<SubscriptionDefinition>>(json, JsonOptions) ?? [];
+    }
+
+    public async Task UpsertAsync(SubscriptionDefinition subscription, CancellationToken cancellationToken = default)
+    {
+        var items = (await LoadAsync(cancellationToken)).ToList();
+        var index = items.FindIndex(item => item.Id == subscription.Id);
+        if (index >= 0) items[index] = subscription; else items.Add(subscription);
+        PrivateStorage.EnsureDirectory(_directory);
+        await PrivateStorage.WriteTextAtomicAsync(_path, System.Text.Json.JsonSerializer.Serialize(items, JsonOptions), cancellationToken);
+    }
+}
+
+public enum CorePreference { Auto, SingBox, Xray }
+public enum RussiaRoutingMode { AllTraffic, OnlyUnavailable }
+public sealed record RoutingOptions(RussiaRoutingMode Mode, bool PrivateNetworksDirect);
+public sealed record AppSettings(CorePreference PreferredCore, RussiaRoutingMode RussiaRouting, bool AutoUpdateSubscriptions, bool StartMinimized, bool EnableSystemTun)
+{
+    public static AppSettings Default { get; } = new(CorePreference.Auto, RussiaRoutingMode.AllTraffic, true, false, false);
+}
+
+public sealed class SettingsStore
+{
+    private readonly string _directory;
+    private readonly string _path;
+    private static readonly System.Text.Json.JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    public SettingsStore(string directory) { _directory = directory; _path = Path.Combine(directory, "settings.json"); }
+    public async Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(_path)) return AppSettings.Default;
+        return System.Text.Json.JsonSerializer.Deserialize<AppSettings>(await File.ReadAllTextAsync(_path, cancellationToken), JsonOptions) ?? AppSettings.Default;
+    }
+    public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
+    {
+        if (settings.EnableSystemTun) throw new NotSupportedException("System TUN недоступен до завершения rooted rollback E2E.");
+        PrivateStorage.EnsureDirectory(_directory);
+        await PrivateStorage.WriteTextAtomicAsync(_path, System.Text.Json.JsonSerializer.Serialize(settings, JsonOptions), cancellationToken);
+    }
+}
+
+public enum CoreKind { SingBox, Xray, Mieru }
+public sealed record CorePaths(string SingBox, string Xray, string Mieru);
+public sealed record CoreSelection(CoreKind Kind, string Executable);
+
+public sealed class CoreSelector(Func<string, bool>? fileExists = null)
+{
+    private readonly Func<string, bool> _fileExists = fileExists ?? File.Exists;
+
+    public CoreSelection Select(StoredProfile profile, CorePreference preference, CorePaths paths)
+    {
+        if (profile.Protocol == "mieru") return Installed(CoreKind.Mieru, paths.Mieru);
+        if (profile.Protocol == "naive")
+        {
+            if (preference == CorePreference.Xray) throw new NotSupportedException("NaiveProxy поддерживается только sing-box.");
+            return Installed(CoreKind.SingBox, paths.SingBox);
+        }
+        if (profile.Protocol != "vless") throw new NotSupportedException($"Протокол {profile.ProtocolLabel} не поддержан.");
+        return preference switch
+        {
+            CorePreference.SingBox => Installed(CoreKind.SingBox, paths.SingBox),
+            CorePreference.Xray => Installed(CoreKind.Xray, paths.Xray),
+            _ when _fileExists(paths.Xray) => new CoreSelection(CoreKind.Xray, paths.Xray),
+            _ => Installed(CoreKind.SingBox, paths.SingBox)
+        };
+    }
+
+    private CoreSelection Installed(CoreKind kind, string path) => _fileExists(path)
+        ? new CoreSelection(kind, path)
+        : throw new FileNotFoundException($"Ядро {kind} не найдено.", path);
+}
+
+internal static class PrivateStorage
+{
+    public static void EnsureDirectory(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    public static async Task WriteTextAtomicAsync(string path, string content, CancellationToken cancellationToken)
+    {
+        var temp = path + ".tmp";
+        var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, Share = FileShare.None, Options = FileOptions.Asynchronous };
+        if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        await using (var stream = new FileStream(temp, options))
+        await using (var writer = new StreamWriter(stream, System.Text.Encoding.UTF8))
+            await writer.WriteAsync(content.AsMemory(), cancellationToken);
+        File.Move(temp, path, true);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 }
 

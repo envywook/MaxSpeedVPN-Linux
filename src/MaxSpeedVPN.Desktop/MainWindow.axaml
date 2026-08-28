@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="using:MaxSpeedVPN.Desktop"
         x:Class="MaxSpeedVPN.Desktop.MainWindow"
-        Width="1180" Height="760" MinWidth="980" MinHeight="660"
+        Width="1180" Height="790" MinWidth="980" MinHeight="690"
         TransparencyLevelHint="Mica,Blur,AcrylicBlur,Transparent"
         TransparencyBackgroundFallback="#090C14"
         Background="#E8070910" FontFamily="Inter"
@@ -13,12 +13,28 @@
       <Border Width="680" Padding="26" CornerRadius="20" Background="#F00B0E16" BorderBrush="#426C79FF" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">
         <StackPanel Spacing="14">
           <TextBlock Text="Добавить сервер" Foreground="#F6F8FF" FontSize="23" FontWeight="SemiBold" />
-          <TextBlock Text="VLESS Reality · NaiveProxy · Mieru. Протокол и имя сохраняются без ярлыка Custom." Foreground="#929AAF" FontSize="12" />
+          <TextBlock Text="VLESS Reality · NaiveProxy · Mieru simple TCP" Foreground="#929AAF" FontSize="12" />
           <TextBox x:Name="ProfileUriTextBox" PlaceholderText="vless://… · naive+https://… · mierus://…" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="112" />
           <TextBlock x:Name="ImportErrorText" Foreground="#FF9AAB" FontSize="11" IsVisible="False" TextWrapping="Wrap" />
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
             <Button Content="Отмена" Classes="secondary" Click="CancelImport_Click" />
-            <Button Content="Сохранить сервер" Classes="primary" Click="ConfirmImport_Click" />
+            <Button Content="Сохранить" Classes="primary" Click="ConfirmImport_Click" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Border>
+
+    <Border x:Name="SubscriptionOverlay" Grid.RowSpan="2" ZIndex="21" Background="#D9000000" IsVisible="False">
+      <Border Width="680" Padding="26" CornerRadius="20" Background="#F00B0E16" BorderBrush="#426C79FF" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Spacing="14">
+          <TextBlock Text="Добавить подписку" Foreground="#F6F8FF" FontSize="23" FontWeight="SemiBold" />
+          <TextBox x:Name="SubscriptionNameTextBox" PlaceholderText="Название" />
+          <TextBox x:Name="SubscriptionUrlTextBox" PlaceholderText="https://…" />
+          <TextBlock Text="URL сохраняется локально с правами только для текущего пользователя." Foreground="#758096" FontSize="11" />
+          <TextBlock x:Name="SubscriptionErrorText" Foreground="#FF9AAB" FontSize="11" IsVisible="False" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button Content="Отмена" Classes="secondary" Click="CancelSubscription_Click" />
+            <Button Content="Добавить и обновить" Classes="primary" Click="ConfirmSubscription_Click" />
           </StackPanel>
         </StackPanel>
       </Border>
@@ -28,108 +44,178 @@
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
           <Image Width="38" Height="38" Source="avares://MaxSpeedVPN.Desktop/Assets/maxspeedvpn.png" />
-          <StackPanel Spacing="0">
-            <TextBlock Text="MaxSpeedVPN" Foreground="#FAFBFF" FontSize="17" FontWeight="SemiBold" />
-            <TextBlock Text="LINUX · PRIVATE NETWORK" Foreground="#687089" FontSize="9" LetterSpacing="1.8" />
-          </StackPanel>
+          <TextBlock Text="MaxSpeedVPN" Foreground="#FAFBFF" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
         </StackPanel>
-        <Border Grid.Column="2" Background="#161A28" BorderBrush="#2CFFFFFF" BorderThickness="1" CornerRadius="15" Padding="12,7">
-          <StackPanel Orientation="Horizontal" Spacing="7">
-            <Ellipse x:Name="EngineDot" Width="7" Height="7" Fill="#7E8794" VerticalAlignment="Center" />
-            <TextBlock x:Name="EngineStatusText" Text="Проверяем движки" Foreground="#BAC1D0" FontSize="12" />
-          </StackPanel>
-        </Border>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+          <Button x:Name="HeaderHwidButton" Classes="icon" Content="ID" Click="CopyHwid_Click" ToolTip.Tip="Скопировать HWID" AutomationProperties.Name="Скопировать HWID" />
+          <Button Classes="icon" Content="⚙" Click="OpenSettings_Click" ToolTip.Tip="Настройки" AutomationProperties.Name="Открыть настройки" />
+        </StackPanel>
       </Grid>
     </Border>
 
-    <Grid Grid.Row="1" Margin="30,24" RowDefinitions="Auto,*,Auto">
-      <Grid ColumnDefinitions="*,Auto">
-        <StackPanel Spacing="6">
-          <TextBlock Text="Сеть под контролем" Foreground="#F7F8FD" FontSize="30" FontWeight="SemiBold" LetterSpacing="-0.8" />
-          <TextBlock Text="Серверы с честным протоколом и TCP-проверкой endpoint без ярлыка Custom." Foreground="#828BA0" FontSize="13" />
-        </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Bottom">
-          <Button x:Name="PingAllButton" Content="TCP-проверка" Classes="secondary" Click="PingAll_Click" />
-          <ToggleButton x:Name="LivePingToggle" Content="Live TCP check" Classes="live" IsCheckedChanged="LivePingToggle_Changed" />
-          <Button Content="＋ Сервер" Classes="primary" Click="ImportProfile_Click" />
-        </StackPanel>
-      </Grid>
+    <TabControl x:Name="MainTabs" Grid.Row="1" Margin="24,14,24,20">
+      <TabItem Header="Подключение">
+        <Grid Margin="6,14,6,0" RowDefinitions="Auto,*,Auto">
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button x:Name="PingAllButton" Classes="icon" Click="PingAll_Click" ToolTip.Tip="Проверить задержку" AutomationProperties.Name="Проверить задержку">
+              <PathIcon Data="M13,2 L5,14 H11 L10,22 L19,9 H13 Z" Width="20" Height="20" Foreground="#DCE3FF" />
+            </Button>
+            <ToggleButton x:Name="LivePingToggle" Content="real-time пинг" Classes="live" IsCheckedChanged="LivePingToggle_Changed" />
+            <Button Content="+" Classes="add" Click="ImportProfile_Click" ToolTip.Tip="Добавить сервер" AutomationProperties.Name="Добавить сервер" />
+          </StackPanel>
 
-      <Grid Grid.Row="1" Margin="0,24,0,0" ColumnDefinitions="0.94*,1.06*" ColumnSpacing="18">
-        <Border Classes="panel" Padding="24">
-          <Grid RowDefinitions="Auto,*,Auto">
-            <Grid ColumnDefinitions="*,Auto">
-              <StackPanel Spacing="4">
-                <TextBlock Text="СОЕДИНЕНИЕ" Classes="eyebrow" />
-                <TextBlock x:Name="StatusText" Text="Не подключено" Foreground="#F4F6FC" FontSize="23" FontWeight="SemiBold" />
-              </StackPanel>
-              <Border Grid.Column="1" Background="#141A29" CornerRadius="12" Padding="11,6">
-                <TextBlock x:Name="ModeBadgeText" Text="LOCAL PROXY" Foreground="#7D88FF" FontSize="9" FontWeight="SemiBold" LetterSpacing="1" />
-              </Border>
-            </Grid>
-
-            <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="17">
-              <Button x:Name="ConnectButton" Classes="connect" Click="Connect_Click" IsEnabled="False" AutomationProperties.Name="Подключить">
-                <Grid Width="152" Height="152">
-                  <Ellipse Fill="#141829" Stroke="#4962FF" StrokeThickness="2" />
-                  <Ellipse Margin="12" Fill="#121627" Stroke="#2444C8FF" StrokeThickness="1" />
-                  <PathIcon Data="M12,2 A10,10 0 1 0 22,12 A10,10 0 0 0 12,2 M12,6 L12,13" Foreground="#DDE4FF" Width="54" Height="54" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          <Grid Grid.Row="1" Margin="0,14,0,0" ColumnDefinitions="0.94*,1.06*" ColumnSpacing="18">
+            <Border Classes="panel" Padding="24">
+              <Grid RowDefinitions="Auto,*,Auto">
+                <Grid ColumnDefinitions="*">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="СОЕДИНЕНИЕ" Classes="eyebrow" />
+                    <TextBlock x:Name="StatusText" Text="Не подключено" Foreground="#F4F6FC" FontSize="23" FontWeight="SemiBold" />
+                  </StackPanel>
                 </Grid>
-              </Button>
-              <TextBlock x:Name="ConnectHint" Text="Выберите или добавьте сервер" Foreground="#8B94A8" FontSize="12" />
-            </StackPanel>
-
-            <Grid Grid.Row="2" ColumnDefinitions="*,*,*" ColumnSpacing="10">
-              <Border Classes="metric"><StackPanel><TextBlock Text="ПРОКСИ" Classes="eyebrow"/><TextBlock Text="127.0.0.1:10808" Classes="metricValue"/></StackPanel></Border>
-              <Border Grid.Column="1" Classes="metric"><StackPanel><TextBlock Text="ПРОТОКОЛ" Classes="eyebrow"/><TextBlock x:Name="SelectedProtocolText" Text="—" Classes="metricValue"/></StackPanel></Border>
-              <Border Grid.Column="2" Classes="metric"><StackPanel><TextBlock Text="ЗАДЕРЖКА" Classes="eyebrow"/><TextBlock x:Name="SelectedLatencyText" Text="—" Classes="metricValue"/></StackPanel></Border>
-            </Grid>
-          </Grid>
-        </Border>
-
-        <Border Grid.Column="1" Classes="panel" Padding="20">
-          <Grid RowDefinitions="Auto,*">
-            <Grid ColumnDefinitions="*,Auto">
-              <StackPanel Spacing="3">
-                <TextBlock Text="Серверы" Foreground="#F2F4FA" FontSize="17" FontWeight="SemiBold" />
-                <TextBlock x:Name="ServerCountText" Text="0 сохранено" Foreground="#727C92" FontSize="11" />
-              </StackPanel>
-              <TextBlock Grid.Column="1" Text="TCP reachability" Foreground="#586178" FontSize="10" VerticalAlignment="Center" />
-            </Grid>
-            <ListBox x:Name="ServersList" Grid.Row="1" Margin="0,16,0,0" Background="Transparent" BorderThickness="0" SelectionChanged="ServersList_SelectionChanged">
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="local:ServerRow">
-                  <Border Classes="serverRow" Margin="0,0,0,8" Padding="14">
-                    <Grid ColumnDefinitions="Auto,*,Auto">
-                      <Border Width="42" Height="42" CornerRadius="13" Background="#172038" BorderBrush="#246C79FF" BorderThickness="1">
-                        <TextBlock Text="{Binding ProtocolCode}" Foreground="#AEB8FF" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                      </Border>
-                      <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Text="{Binding Name}" Foreground="#E8EBF5" FontSize="13" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding Endpoint}" Foreground="#6F7A92" FontSize="10" />
-                        <TextBlock Text="{Binding ProtocolLabel}" Foreground="#7786E8" FontSize="9" />
-                      </StackPanel>
-                      <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="2">
-                        <TextBlock Text="{Binding LatencyText}" Foreground="#A9E7CE" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right" />
-                        <TextBlock Text="{Binding CheckedText}" Foreground="#596276" FontSize="9" HorizontalAlignment="Right" />
-                      </StackPanel>
+                <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="17">
+                  <Button x:Name="ConnectButton" Classes="connect" Click="Connect_Click" IsEnabled="False" AutomationProperties.Name="Подключить">
+                    <Grid Width="148" Height="148">
+                      <Ellipse Fill="#141829" Stroke="#4962FF" StrokeThickness="2" />
+                      <Ellipse Margin="12" Fill="#121627" Stroke="#2444C8FF" StrokeThickness="1" />
+                      <PathIcon Data="M12,2 A10,10 0 1 0 22,12 A10,10 0 0 0 12,2 M12,6 L12,13" Foreground="#DDE4FF" Width="54" Height="54" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Grid>
-                  </Border>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-          </Grid>
-        </Border>
-      </Grid>
+                  </Button>
+                  <TextBlock x:Name="ConnectHint" Text="Выберите или добавьте сервер" Foreground="#8B94A8" FontSize="12" />
+                </StackPanel>
+                <Grid Grid.Row="2" ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                  <Border Classes="metric"><StackPanel><TextBlock Text="ПРОКСИ" Classes="eyebrow"/><TextBlock Text="127.0.0.1:10808" Classes="metricValue"/></StackPanel></Border>
+                  <Border Grid.Column="1" Classes="metric"><StackPanel><TextBlock Text="ЯДРО" Classes="eyebrow"/><TextBlock x:Name="SelectedCoreText" Text="—" Classes="metricValue"/></StackPanel></Border>
+                  <Border Grid.Column="2" Classes="metric"><StackPanel><TextBlock Text="ПИНГ" Classes="eyebrow"/><TextBlock x:Name="SelectedLatencyText" Text="—" Classes="metricValue"/></StackPanel></Border>
+                </Grid>
+              </Grid>
+            </Border>
 
-      <Border Grid.Row="2" Classes="eventPanel" Margin="0,18,0,0" Padding="16,13">
-        <Grid ColumnDefinitions="Auto,*,Auto">
-          <Ellipse Width="7" Height="7" Fill="#6880FF" VerticalAlignment="Center" />
-          <TextBlock x:Name="EventText" Grid.Column="1" Margin="12,0" Text="Добавьте VLESS Reality, NaiveProxy или Mieru сервер." Foreground="#808A9F" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
-          <TextBlock Grid.Column="2" Text="MaxSpeedVPN Core" Foreground="#4E586E" FontSize="9" VerticalAlignment="Center" />
+            <Border Grid.Column="1" Classes="panel" Padding="20">
+              <Grid RowDefinitions="Auto,*">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Серверы" Foreground="#F2F4FA" FontSize="17" FontWeight="SemiBold" />
+                    <TextBlock x:Name="ServerCountText" Text="0 сохранено" Foreground="#727C92" FontSize="11" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Подписки" Classes="secondary" Click="OpenSubscriptions_Click" />
+                </Grid>
+                <Grid Grid.Row="1">
+                  <StackPanel x:Name="EmptyServersState" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
+                    <TextBlock Text="Серверов пока нет" Foreground="#AAB3C5" FontSize="14" HorizontalAlignment="Center" />
+                    <TextBlock Text="Добавьте ссылку кнопкой + или импортируйте подписку" Foreground="#7F899F" FontSize="11" HorizontalAlignment="Center" />
+                  </StackPanel>
+                  <ListBox x:Name="ServersList" Margin="0,16,0,0" Background="Transparent" BorderThickness="0" SelectionChanged="ServersList_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate x:DataType="local:ServerRow">
+                        <Border Classes="serverRow" Margin="0,0,0,8" Padding="14">
+                          <Grid ColumnDefinitions="Auto,*,Auto">
+                            <Border Width="42" Height="42" CornerRadius="13" Background="#172038" BorderBrush="#246C79FF" BorderThickness="1">
+                              <TextBlock Text="{Binding ProtocolCode}" Foreground="#AEB8FF" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="2">
+                              <TextBlock Text="{Binding Name}" Foreground="#E8EBF5" FontSize="13" FontWeight="SemiBold" />
+                              <TextBlock Text="{Binding Endpoint}" Foreground="#818CA4" FontSize="10" />
+                              <TextBlock Text="{Binding ProtocolLabel}" Foreground="#8895FF" FontSize="9" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="2">
+                              <TextBlock Text="{Binding LatencyText}" Foreground="#A9E7CE" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right" />
+                              <TextBlock Text="{Binding CheckedText}" Foreground="#778197" FontSize="9" HorizontalAlignment="Right" />
+                            </StackPanel>
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </Grid>
+              </Grid>
+            </Border>
+          </Grid>
+
+          <Border Grid.Row="2" Classes="eventPanel" Margin="0,16,0,0" Padding="16,12">
+            <Grid ColumnDefinitions="Auto,*">
+              <Ellipse Width="7" Height="7" Fill="#6880FF" VerticalAlignment="Center" />
+              <TextBlock x:Name="EventText" Grid.Column="1" Margin="12,0" Text="Добавьте сервер или подписку." Foreground="#808A9F" FontSize="11" TextWrapping="Wrap" />
+            </Grid>
+          </Border>
         </Grid>
-      </Border>
-    </Grid>
+      </TabItem>
+
+      <TabItem Header="Подписки">
+        <Grid Margin="12,18" RowDefinitions="Auto,Auto,*">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Подписки" Foreground="#F3F5FB" FontSize="24" FontWeight="SemiBold" />
+              <TextBlock x:Name="SubscriptionCountText" Text="0 добавлено" Foreground="#7A849A" FontSize="12" />
+            </StackPanel>
+            <Button Grid.Column="1" Content="+" Classes="add" Click="OpenSubscriptions_Click" AutomationProperties.Name="Добавить подписку" />
+          </Grid>
+          <TextBlock Grid.Row="1" Margin="0,18,0,12" Text="Обновление импортирует только поддерживаемые VLESS Reality, NaiveProxy и Mieru simple TCP профили." Foreground="#828CA2" TextWrapping="Wrap" />
+          <ListBox x:Name="SubscriptionsList" Grid.Row="2" Background="Transparent" BorderThickness="0">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="local:SubscriptionRow">
+                <Border Classes="serverRow" Margin="0,0,0,10" Padding="16">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="4">
+                      <TextBlock Text="{Binding Name}" Foreground="#E8EBF5" FontSize="14" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding DisplayHost}" Foreground="#737E95" FontSize="11" />
+                      <TextBlock Text="{Binding UpdatedText}" Foreground="#566178" FontSize="10" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Обновить" Classes="secondary" Tag="{Binding Id}" Click="RefreshSubscription_Click" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+      </TabItem>
+
+      <TabItem Header="Настройки">
+        <ScrollViewer Margin="12,18">
+          <StackPanel Spacing="16" MaxWidth="820" HorizontalAlignment="Left">
+            <TextBlock Text="Настройки" Foreground="#F3F5FB" FontSize="24" FontWeight="SemiBold" />
+            <Border Classes="panel" Padding="20">
+              <StackPanel Spacing="14">
+                <TextBlock Text="Подключение" Foreground="#E9ECF5" FontSize="16" FontWeight="SemiBold" />
+                <Grid ColumnDefinitions="220,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="12">
+                  <TextBlock Text="Ядро" Foreground="#ABB3C4" VerticalAlignment="Center" />
+                  <ComboBox x:Name="CorePreferenceBox" Grid.Column="1" SelectedIndex="0">
+                    <ComboBoxItem Content="Авто" Tag="Auto"/><ComboBoxItem Content="sing-box" Tag="SingBox"/><ComboBoxItem Content="Xray" Tag="Xray"/>
+                  </ComboBox>
+                  <TextBlock Grid.Row="1" Text="Локальный proxy" Foreground="#ABB3C4" VerticalAlignment="Center" />
+                  <TextBlock Grid.Row="1" Grid.Column="1" Text="127.0.0.1:10808 · SOCKS/HTTP" Foreground="#778197" VerticalAlignment="Center" />
+                  <TextBlock Grid.Row="2" Text="System TUN" Foreground="#ABB3C4" VerticalAlignment="Center" />
+                  <CheckBox x:Name="SystemTunCheckBox" Grid.Row="2" Grid.Column="1" Content="Недоступно до rooted rollback E2E" IsEnabled="False" />
+                </Grid>
+              </StackPanel>
+            </Border>
+            <Border Classes="panel" Padding="20">
+              <StackPanel Spacing="14">
+                <TextBlock Text="Маршрутизация для РФ" Foreground="#E9ECF5" FontSize="16" FontWeight="SemiBold" />
+                <TextBlock Text="Безопасный базовый пресет работает сейчас. Split-routing только недоступных ресурсов появится после закрепления и проверки регионального ruleset." Foreground="#7E899F" FontSize="11" TextWrapping="Wrap" />
+                <RadioButton x:Name="RussiaAllTrafficRadio" GroupName="RussiaRouting" Content="Весь трафик через proxy" IsChecked="True" />
+                <RadioButton x:Name="RussiaOnlyUnavailableRadio" GroupName="RussiaRouting" Content="Только недоступные ресурсы (ruleset ещё не установлен)" IsEnabled="False" />
+                <CheckBox x:Name="PrivateNetworksDirectCheckBox" Content="Локальные и приватные сети напрямую" IsChecked="True" />
+              </StackPanel>
+            </Border>
+            <Border Classes="panel" Padding="20">
+              <StackPanel Spacing="12">
+                <TextBlock Text="Устройство" Foreground="#E9ECF5" FontSize="16" FontWeight="SemiBold" />
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBox x:Name="HwidTextBox" IsReadOnly="True" PlaceholderText="HWID" />
+                  <Button Grid.Column="1" Margin="10,0,0,0" Content="Копировать" Classes="secondary" Click="CopyHwid_Click" />
+                </Grid>
+                <TextBlock Text="HWID — случайный идентификатор этой установки; аппаратные серийные номера не читаются." Foreground="#737E94" FontSize="11" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+            <StackPanel Orientation="Horizontal" Spacing="12">
+              <CheckBox x:Name="AutoUpdateSubscriptionsCheckBox" Content="Обновлять подписки при запуске" IsChecked="True" />
+              <Button Content="Сохранить настройки" Classes="primary" Click="SaveSettings_Click" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
   </Grid>
 
   <Window.Styles>
@@ -138,15 +224,17 @@
     <Style Selector="Border.serverRow"><Setter Property="Background" Value="#B510141F"/><Setter Property="BorderBrush" Value="#18FFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="14"/></Style>
     <Style Selector="Border.serverRow:pointerover"><Setter Property="Background" Value="#192035"/><Setter Property="BorderBrush" Value="#386C79FF"/></Style>
     <Style Selector="Border.eventPanel"><Setter Property="Background" Value="#9A0B0E16"/><Setter Property="BorderBrush" Value="#18FFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="14"/></Style>
-    <Style Selector="TextBlock.eyebrow"><Setter Property="Foreground" Value="#626D86"/><Setter Property="FontSize" Value="9"/><Setter Property="LetterSpacing" Value="1.4"/></Style>
+    <Style Selector="TextBlock.eyebrow"><Setter Property="Foreground" Value="#8994AA"/><Setter Property="FontSize" Value="9"/><Setter Property="LetterSpacing" Value="1.4"/></Style>
     <Style Selector="TextBlock.metricValue"><Setter Property="Foreground" Value="#D7DBE7"/><Setter Property="FontSize" Value="11"/><Setter Property="Margin" Value="0,5,0,0"/></Style>
     <Style Selector="Button.primary"><Setter Property="Background" Value="#566BFF"/><Setter Property="Foreground" Value="White"/><Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="16,10"/></Style>
     <Style Selector="Button.secondary"><Setter Property="Background" Value="#101521"/><Setter Property="Foreground" Value="#C4CAD8"/><Setter Property="BorderBrush" Value="#2BFFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="15,9"/></Style>
-    <Style Selector="ToggleButton.live"><Setter Property="Background" Value="#101521"/><Setter Property="Foreground" Value="#C4CAD8"/><Setter Property="BorderBrush" Value="#2BFFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="15,9"/></Style>
+    <Style Selector="Button.icon"><Setter Property="Width" Value="46"/><Setter Property="Height" Value="46"/><Setter Property="Background" Value="#101521"/><Setter Property="Foreground" Value="#C4CAD8"/><Setter Property="BorderBrush" Value="#2BFFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="10"/></Style>
+    <Style Selector="Button.add"><Setter Property="Width" Value="46"/><Setter Property="Height" Value="46"/><Setter Property="Background" Value="#566BFF"/><Setter Property="Foreground" Value="White"/><Setter Property="FontSize" Value="24"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="0"/></Style>
+    <Style Selector="ToggleButton.live"><Setter Property="MinHeight" Value="46"/><Setter Property="Background" Value="#101521"/><Setter Property="Foreground" Value="#C4CAD8"/><Setter Property="BorderBrush" Value="#2BFFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="15,9"/></Style>
     <Style Selector="ToggleButton.live:checked"><Setter Property="Background" Value="#19392D"/><Setter Property="Foreground" Value="#A9E7CE"/><Setter Property="BorderBrush" Value="#2D8968"/></Style>
     <Style Selector="Button.connect"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="0"/><Setter Property="CornerRadius" Value="90"/></Style>
-    <Style Selector="Button.connect:pointerover"><Setter Property="Opacity" Value="0.9"/></Style>
     <Style Selector="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="Background" Value="Transparent"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
     <Style Selector="ListBoxItem:selected"><Setter Property="Background" Value="Transparent"/></Style>
+    <Style Selector="TabItem"><Setter Property="FontSize" Value="13"/><Setter Property="Padding" Value="16,10"/></Style>
   </Window.Styles>
 </Window>

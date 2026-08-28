@@ -28,7 +28,18 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Mieru runtime adapter requires the native client", MieruRuntimeAdapterRequiresNativeClient),
     ("TUN request is fixed-scope and validates endpoint", TunRequestIsFixedScopeAndValidatesEndpoint),
     ("TUN transaction rolls back in reverse order", TunTransactionRollsBackInReverseOrder),
-    ("TUN transaction rolls back after partial failure", TunTransactionRollsBackAfterPartialFailure)
+    ("TUN transaction rolls back after partial failure", TunTransactionRollsBackAfterPartialFailure),
+    ("HWID store creates a stable URL-safe private identifier", HwidStoreCreatesStablePrivateIdentifier),
+    ("Subscription parser imports supported lines and reports rejects", SubscriptionParserImportsSupportedLinesAndReportsRejects),
+    ("Subscription store persists URL privately", SubscriptionStorePersistsUrlPrivately),
+    ("Settings store persists engine and Russia routing choices", SettingsStorePersistsChoices),
+    ("Core selector automatically picks a compatible installed engine", CoreSelectorPicksCompatibleInstalledEngine),
+    ("Core selector rejects unsupported engine and protocol combinations", CoreSelectorRejectsUnsupportedCombination),
+    ("Stored Xray writer accepts only compatible VLESS profiles", StoredXrayWriterAcceptsOnlyVlessProfiles),
+    ("All-traffic routing keeps private networks direct", AllTrafficRoutingKeepsPrivateNetworksDirect),
+    ("Regional routing is honestly gated without a pinned ruleset", RegionalRoutingIsGatedWithoutRuleset),
+    ("Stored sing-box runtime reports controller state", StoredSingBoxRuntimeReportsControllerState),
+    ("Subscription client forwards HWID without query-string leakage", SubscriptionClientForwardsHwidPrivately)
 };
 
 var failed = 0;
@@ -463,6 +474,140 @@ static async Task TunTransactionRollsBackAfterPartialFailure()
     Equal("AddTable,AddRule,AddRoute,DeleteRule,DeleteTable", string.Join(',', executor.Calls));
 }
 
+static async Task HwidStoreCreatesStablePrivateIdentifier()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-hwid-{Guid.NewGuid():N}");
+    var store = new HwidStore(root);
+    var first = await store.GetOrCreateAsync();
+    var second = await store.GetOrCreateAsync();
+    Equal(first, second);
+    if (first.Length is < 10 or > 64 || first.Any(character => !char.IsLetterOrDigit(character) && character is not '=' and not '-'))
+        throw new Exception($"HWID is not URL-safe: {first}");
+    if (!OperatingSystem.IsWindows())
+        Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(Path.Combine(root, "hwid")));
+    Directory.Delete(root, true);
+}
+
+static Task SubscriptionParserImportsSupportedLinesAndReportsRejects()
+{
+    var vless = "vless://00000000-0000-0000-0000-000000000001@vpn.example.com:443?security=reality&sni=cdn.example.com&fp=chrome&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=ab&type=tcp#Amsterdam";
+    var naive = "naive+https://user:pass@naive.example.com:443#Naive";
+    var payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{vless}\nvmess://unsupported\n{naive}\n"));
+    var result = new SubscriptionParser().Parse(payload);
+    Equal(2, result.Profiles.Count);
+    Equal(1, result.RejectedLines.Count);
+    Sequence(new[] { "VLESS Reality", "NaiveProxy" }, result.Profiles.Select(profile => profile.ProtocolLabel).ToArray());
+    return Task.CompletedTask;
+}
+
+static async Task SubscriptionStorePersistsUrlPrivately()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-subscriptions-{Guid.NewGuid():N}");
+    var store = new SubscriptionStore(root);
+    var subscription = SubscriptionDefinition.Create("Основная", "https://subscription.example/path?token=secret");
+    await store.UpsertAsync(subscription);
+    var loaded = await store.LoadAsync();
+    Equal(1, loaded.Count);
+    Equal(subscription.Url, loaded[0].Url);
+    Equal("Основная", loaded[0].Name);
+    if (!OperatingSystem.IsWindows())
+        Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(Path.Combine(root, "subscriptions.json")));
+    Directory.Delete(root, true);
+}
+
+static async Task SettingsStorePersistsChoices()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-settings-{Guid.NewGuid():N}");
+    var store = new SettingsStore(root);
+    var expected = new AppSettings(CorePreference.Xray, RussiaRoutingMode.OnlyUnavailable, true, false, false);
+    await store.SaveAsync(expected);
+    Equal(expected, await store.LoadAsync());
+    Directory.Delete(root, true);
+}
+
+static Task CoreSelectorPicksCompatibleInstalledEngine()
+{
+    var vless = StoredProfile.FromVpnProfile(SampleProfile());
+    var paths = new CorePaths("/opt/maxspeedvpn/bin/sing-box", "/opt/maxspeedvpn/bin/xray", "/opt/maxspeedvpn/bin/mieru");
+    var selector = new CoreSelector(path => path != paths.Mieru);
+    Equal(CoreKind.Xray, selector.Select(vless, CorePreference.Auto, paths).Kind);
+    Equal(CoreKind.SingBox, selector.Select(vless, CorePreference.SingBox, paths).Kind);
+    var naive = new ProfileParser().ParseStored("naive+https://user:pass@naive.example.com:443#Naive");
+    Equal(CoreKind.SingBox, selector.Select(naive, CorePreference.Auto, paths).Kind);
+    return Task.CompletedTask;
+}
+
+static Task CoreSelectorRejectsUnsupportedCombination()
+{
+    var paths = new CorePaths("/opt/maxspeedvpn/bin/sing-box", "/opt/maxspeedvpn/bin/xray", "/opt/maxspeedvpn/bin/mieru");
+    var selector = new CoreSelector(_ => true);
+    var naive = new ProfileParser().ParseStored("naive+https://user:pass@naive.example.com:443#Naive");
+    Throws<NotSupportedException>(() => selector.Select(naive, CorePreference.Xray, paths));
+    var mieru = new ProfileParser().ParseStored("mierus://user:pass@1.2.3.4?profile=fast&port=6666&protocol=TCP");
+    Equal(CoreKind.Mieru, selector.Select(mieru, CorePreference.Auto, paths).Kind);
+    return Task.CompletedTask;
+}
+
+static Task StoredXrayWriterAcceptsOnlyVlessProfiles()
+{
+    var vless = StoredProfile.FromVpnProfile(SampleProfile());
+    Contains("\"protocol\": \"vless\"", new StoredXrayConfigWriter(vless).Write(SampleProfile(), 10808));
+    var naive = new ProfileParser().ParseStored("naive+https://user:pass@naive.example.com:443#Naive");
+    Throws<NotSupportedException>(() => new StoredXrayConfigWriter(naive).Write(SampleProfile(), 10808));
+    return Task.CompletedTask;
+}
+
+static Task AllTrafficRoutingKeepsPrivateNetworksDirect()
+{
+    var profile = StoredProfile.FromVpnProfile(SampleProfile());
+    var singBox = new StoredSingBoxConfigWriter(profile, new RoutingOptions(RussiaRoutingMode.AllTraffic, true)).Write(SampleProfile(), 10808);
+    Contains("\"ip_is_private\": true", singBox);
+    Contains("\"action\": \"route\"", singBox);
+    Contains("\"outbound\": \"direct\"", singBox);
+    var xray = new StoredXrayConfigWriter(profile, new RoutingOptions(RussiaRoutingMode.AllTraffic, true)).Write(SampleProfile(), 10808);
+    Contains("geoip:private", xray);
+    Contains("\"outboundTag\": \"direct\"", xray);
+    return Task.CompletedTask;
+}
+
+static Task RegionalRoutingIsGatedWithoutRuleset()
+{
+    var profile = StoredProfile.FromVpnProfile(SampleProfile());
+    Throws<NotSupportedException>(() => new StoredSingBoxConfigWriter(profile, new RoutingOptions(RussiaRoutingMode.OnlyUnavailable, true)).Write(SampleProfile(), 10808));
+    Throws<NotSupportedException>(() => new StoredXrayConfigWriter(profile, new RoutingOptions(RussiaRoutingMode.OnlyUnavailable, true)).Write(SampleProfile(), 10808));
+    return Task.CompletedTask;
+}
+
+static async Task StoredSingBoxRuntimeReportsControllerState()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-stored-runtime-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(root);
+    var script = Path.Combine(root, "fake-sing-box");
+    var port = GetFreePort();
+    await File.WriteAllTextAsync(script, $"#!/bin/sh\npython3 -m http.server {port} --bind 127.0.0.1 >/dev/null 2>&1 & child=$!\ntrap 'kill $child 2>/dev/null; exit 0' TERM INT\nwait $child\n");
+    if (!OperatingSystem.IsWindows())
+        File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    await using var runtime = new StoredSingBoxRuntime(script, root, StoredProfile.FromVpnProfile(SampleProfile()), localPort: port, startupTimeout: TimeSpan.FromSeconds(3));
+    var controller = new ConnectionController(runtime);
+    try
+    {
+        await controller.ConnectAsync(SampleProfile());
+        Equal(ConnectionState.Connected, controller.State);
+        await controller.DisconnectAsync();
+        Equal(ConnectionState.Disconnected, controller.State);
+    }
+    finally { Directory.Delete(root, true); }
+}
+
+static async Task SubscriptionClientForwardsHwidPrivately()
+{
+    var handler = new RecordingHttpHandler("dmxlc3M6Ly9leGFtcGxl");
+    using var client = new SubscriptionClient(new System.Net.Http.HttpClient(handler));
+    Equal("dmxlc3M6Ly9leGFtcGxl", await client.DownloadAsync("https://subscription.example/path?token=secret", "device-id"));
+    Equal("device-id", handler.Request?.Headers.GetValues("X-Device-ID").Single());
+    Equal("token=secret", handler.Request?.RequestUri?.Query.TrimStart('?'));
+}
+
 static VpnProfile SampleProfile() => new("nl", "Netherlands", "server.example", 443, "00000000-0000-0000-0000-000000000001", "reality", "cdn.example", "chrome", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8", "ab");
 
 static int GetFreePort()
@@ -553,5 +698,18 @@ sealed class FakeRuntime : IProxyRuntime
     {
         StopCount++;
         return Task.CompletedTask;
+    }
+}
+
+sealed class RecordingHttpHandler(string response) : System.Net.Http.HttpMessageHandler
+{
+    public System.Net.Http.HttpRequestMessage? Request { get; private set; }
+    protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        Request = request;
+        return Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Content = new System.Net.Http.StringContent(response)
+        });
     }
 }

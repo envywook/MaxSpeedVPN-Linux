@@ -19,7 +19,14 @@ MaxSpeedVPN Linux invokes external network cores as separate processes and packa
 ## Xray-core
 
 - Project: https://github.com/XTLS/Xray-core
-- Status: supported by the runtime/config layer but not bundled in the `0.2.0` package and not selectable in the current GUI.
+- Packaged version: `26.3.27`, Linux 64-bit, with the upstream `geoip.dat` and `geosite.dat` assets.
 - License: Mozilla Public License 2.0 according to upstream.
+- The exact upstream license text is installed as `/usr/share/licenses/maxspeedvpn-linux/xray-LICENSE`.
+
+## Mieru
+
+- Project: https://github.com/enfein/mieru
+- Packaged version: `3.36.0`, Linux amd64.
+- The exact upstream license text is installed as `/usr/share/licenses/maxspeedvpn-linux/mieru-LICENSE`.
 
 Avalonia and .NET dependencies are restored from NuGet during build and retain their respective licenses and copyright notices. This notice does not replace the complete license metadata supplied by those distributions.
