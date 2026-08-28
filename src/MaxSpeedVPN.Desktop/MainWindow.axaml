@@ -46,11 +46,11 @@
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel Spacing="6">
           <TextBlock Text="Сеть под контролем" Foreground="#F7F8FD" FontSize="30" FontWeight="SemiBold" LetterSpacing="-0.8" />
-          <TextBlock Text="Серверы с честным протоколом, быстрый общий пинг и live-проверка без v2rayN Custom." Foreground="#828BA0" FontSize="13" />
+          <TextBlock Text="Серверы с честным протоколом и TCP-проверкой endpoint без ярлыка Custom." Foreground="#828BA0" FontSize="13" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Bottom">
-          <Button x:Name="PingAllButton" Content="Пинг всех" Classes="secondary" Click="PingAll_Click" />
-          <ToggleButton x:Name="LivePingToggle" Content="Live ping" Classes="live" IsCheckedChanged="LivePingToggle_Changed" />
+          <Button x:Name="PingAllButton" Content="TCP-проверка" Classes="secondary" Click="PingAll_Click" />
+          <ToggleButton x:Name="LivePingToggle" Content="Live TCP check" Classes="live" IsCheckedChanged="LivePingToggle_Changed" />
           <Button Content="＋ Сервер" Classes="primary" Click="ImportProfile_Click" />
         </StackPanel>
       </Grid>

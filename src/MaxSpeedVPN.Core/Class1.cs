@@ -583,7 +583,7 @@ public static class MieruRuntimeAdapter
                 }
             },
             activeProfile = profile.Name,
-            rpcPort = localPort + 1,
+            rpcPort = 0,
             socks5Port = localPort,
             loggingLevel = "INFO",
             socks5ListenLAN = false

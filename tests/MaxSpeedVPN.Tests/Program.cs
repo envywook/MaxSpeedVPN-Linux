@@ -24,6 +24,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Naive config passes real engine validation", NaiveConfigPassesRealEngineValidation),
     ("Mieru simple link parser preserves protocol metadata", MieruSimpleLinkParserPreservesProtocolMetadata),
     ("Mieru parser rejects lossy or unsupported bindings", MieruParserRejectsLossyBindings),
+    ("Mieru runtime config disables unused RPC", MieruRuntimeConfigDisablesUnusedRpc),
     ("Mieru runtime adapter requires the native client", MieruRuntimeAdapterRequiresNativeClient),
     ("TUN request is fixed-scope and validates endpoint", TunRequestIsFixedScopeAndValidatesEndpoint),
     ("TUN transaction rolls back in reverse order", TunTransactionRollsBackInReverseOrder),
@@ -415,6 +416,24 @@ static Task MieruRuntimeAdapterRequiresNativeClient()
 {
     var profile = new ProfileParser().ParseStored("mierus://baozi:secret@1.2.3.4?profile=fast&port=6666&protocol=TCP");
     Throws<FileNotFoundException>(() => MieruRuntimeAdapter.Create("/missing/mieru", profile, Path.GetTempPath(), 10808));
+    return Task.CompletedTask;
+}
+
+static Task MieruRuntimeConfigDisablesUnusedRpc()
+{
+    var directory = Path.Combine(Path.GetTempPath(), $"maxspeed-mieru-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(directory);
+    var executable = Path.Combine(directory, "mieru");
+    File.WriteAllText(executable, string.Empty);
+    try
+    {
+        var profile = new ProfileParser().ParseStored("mierus://baozi:secret@1.2.3.4?profile=fast&port=6666&protocol=TCP");
+        var spec = MieruRuntimeAdapter.Create(executable, profile, directory, 10808);
+        using var json = System.Text.Json.JsonDocument.Parse(spec.ConfigJson);
+        Equal(0, json.RootElement.GetProperty("rpcPort").GetInt32());
+        Equal(10808, json.RootElement.GetProperty("socks5Port").GetInt32());
+    }
+    finally { Directory.Delete(directory, true); }
     return Task.CompletedTask;
 }
 
