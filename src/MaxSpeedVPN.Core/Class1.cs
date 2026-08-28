@@ -102,20 +102,23 @@ public sealed class ProfileParser
         if (credentials.Length != 2 || credentials.Any(string.IsNullOrWhiteSpace))
             throw new FormatException("Mieru username and password are required.");
         var query = ParseQueryMulti(uri.Query);
-        var profileName = query.GetValueOrDefault("profile")?.SingleOrDefault();
+        var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "profile", "port", "protocol" };
+        if (query.Keys.Any(key => !supported.Contains(key)))
+            throw new FormatException("Only the Mieru simple TCP subset is supported.");
+        var profileNames = query.GetValueOrDefault("profile") ?? [];
         var ports = query.GetValueOrDefault("port") ?? [];
         var protocols = query.GetValueOrDefault("protocol") ?? [];
-        if (string.IsNullOrWhiteSpace(profileName) || ports.Count == 0 || ports.Count != protocols.Count)
-            throw new FormatException("Mieru profile requires profile and matching port/protocol values.");
+        if (profileNames.Count != 1 || string.IsNullOrWhiteSpace(profileNames[0]) || ports.Count != 1 || protocols.Count != 1)
+            throw new FormatException("Only one Mieru simple TCP binding is supported.");
         if (!int.TryParse(ports[0], out var port) || port is < 1 or > 65535)
-            throw new FormatException("Mieru first port must be a single valid port.");
-        var protocol = protocols[0].ToUpperInvariant();
-        if (protocol is not ("TCP" or "UDP")) throw new FormatException("Mieru protocol must be TCP or UDP.");
+            throw new FormatException("Mieru port must be a single valid port.");
+        if (!string.Equals(protocols[0], "TCP", StringComparison.OrdinalIgnoreCase))
+            throw new FormatException("Only Mieru simple TCP is supported.");
         return new StoredProfile(
-            $"mieru:{uri.Host}:{port}", profileName, "mieru", "Mieru", uri.Host, port,
+            $"mieru:{uri.Host}:{port}", profileNames[0], "mieru", "Mieru simple TCP", uri.Host, port,
             RuntimeProfile: null, SourceUri: source,
             Username: Uri.UnescapeDataString(credentials[0]), Password: Uri.UnescapeDataString(credentials[1]),
-            Transport: protocol);
+            Transport: "TCP");
     }
 
     private static Dictionary<string, string> ParseQuery(string value)

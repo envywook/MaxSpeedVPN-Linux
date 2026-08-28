@@ -53,7 +53,7 @@ public partial class MainWindow : Window
     {
         var singBox = File.Exists(_enginePath);
         var mieru = File.Exists(_mieruPath);
-        EngineStatusText.Text = singBox ? (mieru ? "Движки готовы" : "sing-box готов") : "sing-box не найден";
+        EngineStatusText.Text = singBox ? (mieru ? "sing-box готов · Mieru установлен" : "sing-box готов") : "sing-box не найден";
         EngineStatusText.Foreground = Brush.Parse(singBox ? "#A9EBC9" : "#FF9AAB");
         EngineDot.Fill = Brush.Parse(singBox ? "#42D791" : "#FF6378");
         UpdateConnectAvailability();
@@ -145,7 +145,12 @@ public partial class MainWindow : Window
         _selected = _profiles[ServersList.SelectedIndex];
         SelectedProtocolText.Text = _selected.ProtocolLabel;
         ModeBadgeText.Text = _selected.Protocol == "mieru" ? "NATIVE CORE" : "LOCAL PROXY";
-        ConnectHint.Text = _selected.Protocol == "vless" ? "Запустить локальный прокси" : $"{_selected.ProtocolLabel}: capability check";
+        ConnectHint.Text = _selected.Protocol switch
+        {
+            "vless" or "naive" => "Запустить локальный SOCKS/HTTP proxy",
+            "mieru" => "Mieru connect появится после lifecycle smoke",
+            _ => "Протокол недоступен"
+        };
         var row = _servers.FirstOrDefault(item => item.Id == _selected.Id);
         SelectedLatencyText.Text = row?.LatencyText ?? "—";
         UpdateConnectAvailability();
@@ -158,9 +163,9 @@ public partial class MainWindow : Window
         PingAllButton.IsEnabled = false;
         try
         {
-            EventText.Text = "Проверяем доступность всех серверов…";
+            EventText.Text = "Проверяем TCP-доступность всех endpoint…";
             await _latencyMonitor.RefreshAsync(_profiles);
-            EventText.Text = "Пинг всех серверов обновлён.";
+            EventText.Text = "TCP-проверка всех endpoint обновлена.";
         }
         finally { PingAllButton.IsEnabled = true; }
     }
@@ -170,12 +175,12 @@ public partial class MainWindow : Window
         if (LivePingToggle.IsChecked == true)
         {
             await _latencyMonitor.StartAsync(() => _profiles);
-            EventText.Text = "Live ping включён: проверка каждые 5 секунд, пока приложение открыто.";
+            EventText.Text = "Live TCP check включён: проверка endpoint каждые 5 секунд.";
         }
         else
         {
             await _latencyMonitor.StopAsync();
-            EventText.Text = "Live ping остановлен.";
+            EventText.Text = "Live TCP check остановлен.";
         }
     }
 
@@ -212,12 +217,15 @@ public partial class MainWindow : Window
     private void UpdateConnectAvailability()
     {
         var busy = _controller?.State is ConnectionState.Preparing or ConnectionState.Connecting or ConnectionState.Disconnecting;
-        ConnectButton.IsEnabled = !busy && _selected is not null && (_selected.Protocol != "vless" || File.Exists(_enginePath));
+        ConnectButton.IsEnabled = !busy && _selected is not null
+            && _selected.Protocol is "vless" or "naive"
+            && File.Exists(_enginePath);
     }
 
     public void ShowFromTray()
     {
         Show();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
     }
 

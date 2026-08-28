@@ -4,6 +4,7 @@
         x:Class="MaxSpeedVPN.Desktop.MainWindow"
         Width="1180" Height="760" MinWidth="980" MinHeight="660"
         TransparencyLevelHint="Mica,Blur,AcrylicBlur,Transparent"
+        TransparencyBackgroundFallback="#090C14"
         Background="#E8070910" FontFamily="Inter"
         Icon="avares://MaxSpeedVPN.Desktop/Assets/maxspeedvpn.ico"
         Title="MaxSpeedVPN">

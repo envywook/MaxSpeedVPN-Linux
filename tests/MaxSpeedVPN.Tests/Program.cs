@@ -23,6 +23,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Naive profile parser preserves protocol metadata", NaiveProfileParserPreservesProtocolMetadata),
     ("Naive config passes real engine validation", NaiveConfigPassesRealEngineValidation),
     ("Mieru simple link parser preserves protocol metadata", MieruSimpleLinkParserPreservesProtocolMetadata),
+    ("Mieru parser rejects lossy or unsupported bindings", MieruParserRejectsLossyBindings),
     ("Mieru runtime adapter requires the native client", MieruRuntimeAdapterRequiresNativeClient),
     ("TUN request is fixed-scope and validates endpoint", TunRequestIsFixedScopeAndValidatesEndpoint),
     ("TUN transaction rolls back in reverse order", TunTransactionRollsBackInReverseOrder),
@@ -393,10 +394,20 @@ static Task MieruSimpleLinkParserPreservesProtocolMetadata()
 {
     var profile = new ProfileParser().ParseStored("mierus://baozi:secret@1.2.3.4?profile=fast&port=6666&protocol=TCP");
     Equal("mieru", profile.Protocol);
-    Equal("Mieru", profile.ProtocolLabel);
+    Equal("Mieru simple TCP", profile.ProtocolLabel);
     Equal("fast", profile.Name);
     Equal("1.2.3.4", profile.Host);
     Equal(6666, profile.Port);
+    return Task.CompletedTask;
+}
+
+static Task MieruParserRejectsLossyBindings()
+{
+    var parser = new ProfileParser();
+    Throws<FormatException>(() => parser.ParseStored("mierus://baozi:secret@1.2.3.4?profile=fast&port=6666&protocol=TCP&port=7777&protocol=TCP"));
+    Throws<FormatException>(() => parser.ParseStored("mierus://baozi:secret@1.2.3.4?profile=fast&port=6666&protocol=UDP"));
+    Throws<FormatException>(() => parser.ParseStored("mierus://baozi:secret@1.2.3.4?profile=fast&port=6666-6670&protocol=TCP"));
+    Throws<FormatException>(() => parser.ParseStored("mierus://baozi:secret@1.2.3.4?profile=fast&port=6666&protocol=TCP&mtu=1400"));
     return Task.CompletedTask;
 }
 
