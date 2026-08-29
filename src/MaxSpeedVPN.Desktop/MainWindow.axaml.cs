@@ -3,8 +3,8 @@ using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
-using Avalonia.Media;
 using MaxSpeedVPN.Core;
 
 namespace MaxSpeedVPN.Desktop;
@@ -45,6 +45,7 @@ public partial class MainWindow : Window
         SubscriptionsList.ItemsSource = _subscriptions;
         Opened += OnOpened;
         Closing += OnClosing;
+        KeyDown += Window_KeyDown;
     }
 
     private static string ResolveCore(string name)
@@ -89,6 +90,7 @@ public partial class MainWindow : Window
             _selected = null;
             SelectedCoreText.Text = "—";
             SelectedLatencyText.Text = "—";
+            ConnectHint.Text = "Сначала добавьте сервер";
             UpdateConnectAvailability();
             return;
         }
@@ -145,6 +147,13 @@ public partial class MainWindow : Window
         SubscriptionErrorText.IsVisible = false;
         SubscriptionOverlay.IsVisible = true;
         SubscriptionUrlTextBox.Focus();
+    }
+
+    private void Window_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || !SubscriptionOverlay.IsVisible) return;
+        CancelSubscription_Click(sender, new RoutedEventArgs());
+        e.Handled = true;
     }
 
     private async void PasteSubscriptionUrl_Click(object? sender, RoutedEventArgs e)
@@ -245,6 +254,7 @@ public partial class MainWindow : Window
         _selected = _profiles[ServersList.SelectedIndex];
         var row = _servers.FirstOrDefault(item => item.Id == _selected.Id);
         SelectedLatencyText.Text = row?.LatencyText ?? "—";
+        if (_controller?.State != ConnectionState.Connected) ConnectHint.Text = "Запустить локальный proxy";
         RenderSelectedCore();
         UpdateConnectAvailability();
     }

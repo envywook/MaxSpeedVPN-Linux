@@ -35,9 +35,11 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Subscription parser imports supported lines and reports rejects", SubscriptionParserImportsSupportedLinesAndReportsRejects),
     ("Subscription parser rejects an empty or unsupported payload", SubscriptionParserRejectsEmptyOrUnsupportedPayload),
     ("Subscription parser imports Remnawave base64 xHTTP and Hysteria2 payload", SubscriptionParserImportsRemnawaveXhttpAndHysteria2),
+    ("Subscription parser assigns distinct IDs to same-endpoint profiles", SubscriptionParserAssignsDistinctIdsToSameEndpointProfiles),
     ("Subscription definition trims URL and derives a default name", SubscriptionDefinitionTrimsUrlAndDerivesDefaultName),
     ("Subscription store persists URL privately", SubscriptionStorePersistsUrlPrivately),
     ("Subscription refresh atomically replaces only its own profiles", SubscriptionRefreshAtomicallyReplacesOnlyItsOwnProfiles),
+    ("Subscription refresh persists every same-endpoint profile", SubscriptionRefreshPersistsEverySameEndpointProfile),
     ("Subscription refresh does not persist a failed empty import", SubscriptionRefreshDoesNotPersistFailedEmptyImport),
     ("Settings store persists engine and Russia routing choices", SettingsStorePersistsChoices),
     ("Core selector automatically picks a compatible installed engine", CoreSelectorPicksCompatibleInstalledEngine),
@@ -562,6 +564,19 @@ static Task SubscriptionParserRejectsEmptyOrUnsupportedPayload()
     return Task.CompletedTask;
 }
 
+static Task SubscriptionParserAssignsDistinctIdsToSameEndpointProfiles()
+{
+    const string endpoint = "edge.example.com:443";
+    const string user = "00000000-0000-0000-0000-000000000001";
+    var first = $"vless://{user}@{endpoint}?encryption=none&type=xhttp&path=%2Falpha&mode=auto&security=tls&sni=edge.example.com&fp=chrome#Alpha";
+    var second = $"vless://{user}@{endpoint}?encryption=none&type=xhttp&path=%2Fbeta&mode=auto&security=tls&sni=edge.example.com&fp=chrome#Beta";
+    var result = new SubscriptionParser().Parse($"{first}\n{second}");
+    Equal(2, result.Profiles.Count);
+    Equal(2, result.Profiles.Select(profile => profile.Id).Distinct(StringComparer.Ordinal).Count());
+    Sequence(new[] { "Alpha", "Beta" }, result.Profiles.Select(profile => profile.Name).ToArray());
+    return Task.CompletedTask;
+}
+
 static Task SubscriptionDefinitionTrimsUrlAndDerivesDefaultName()
 {
     var subscription = SubscriptionDefinition.Create("", "  https://subscription.example/path?token=secret  ");
@@ -615,6 +630,28 @@ static async Task SubscriptionRefreshAtomicallyReplacesOnlyItsOwnProfiles()
         Equal(true, loaded.Any(item => item.Name == "New" && item.SubscriptionId == subscription.Id));
         Equal(false, loaded.Any(item => item.Id == oldOwned.Id));
         Equal(true, (await subscriptions.LoadAsync()).Single().LastUpdated is not null);
+    }
+    finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+}
+
+static async Task SubscriptionRefreshPersistsEverySameEndpointProfile()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"maxspeedvpn-subscription-same-endpoint-{Guid.NewGuid():N}");
+    try
+    {
+        var profiles = new ProfileStore(Path.Combine(root, "profiles"));
+        var subscriptions = new SubscriptionStore(Path.Combine(root, "subscriptions"));
+        var subscription = SubscriptionDefinition.Create("Основная", "https://subscription.example/list");
+        const string endpoint = "edge.example.com:443";
+        const string user = "00000000-0000-0000-0000-000000000001";
+        var first = $"vless://{user}@{endpoint}?encryption=none&type=xhttp&path=%2Falpha&mode=auto&security=tls&sni=edge.example.com&fp=chrome#Alpha";
+        var second = $"vless://{user}@{endpoint}?encryption=none&type=xhttp&path=%2Fbeta&mode=auto&security=tls&sni=edge.example.com&fp=chrome#Beta";
+        await new SubscriptionRefreshService(profiles, subscriptions, new SubscriptionParser())
+            .ApplyAsync(subscription, $"{first}\n{second}");
+        var loaded = await profiles.LoadAsync();
+        Equal(2, loaded.Count);
+        Equal(2, loaded.Select(profile => profile.Id).Distinct(StringComparer.Ordinal).Count());
+        Equal(true, loaded.All(profile => profile.SubscriptionId == subscription.Id));
     }
     finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
 }

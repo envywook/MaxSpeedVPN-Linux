@@ -81,7 +81,7 @@ public sealed class ProfileParser
         if (string.IsNullOrWhiteSpace(name)) name = uri.Host;
 
         return new VpnProfile(
-            Id: $"{uri.Host}:{uri.Port}",
+            Id: ProfileId(value),
             Name: name,
             Host: uri.Host,
             Port: uri.Port,
@@ -146,7 +146,7 @@ public sealed class ProfileParser
         if (string.Equals(obfs, "salamander", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(obfsPassword))
             throw new FormatException("Hysteria2 salamander requires an obfs password.");
         return new StoredProfile(
-            $"hysteria2:{uri.Host}:{uri.Port}", name, "hysteria2", "Hysteria2", uri.Host, uri.Port,
+            ProfileId(source), name, "hysteria2", "Hysteria2", uri.Host, uri.Port,
             RuntimeProfile: null, SourceUri: source, Password: Uri.UnescapeDataString(uri.UserInfo), Transport: "hysteria",
             Security: "tls", ServerName: query.GetValueOrDefault("sni", uri.Host),
             Obfs: obfs, ObfsPassword: obfsPassword, ServerPorts: ports, HopInterval: hopInterval);
@@ -162,7 +162,7 @@ public sealed class ProfileParser
         var name = Uri.UnescapeDataString(uri.Fragment.TrimStart('#'));
         if (string.IsNullOrWhiteSpace(name)) name = uri.Host;
         return new StoredProfile(
-            $"naive:{uri.Host}:{uri.Port}", name, "naive", "NaiveProxy", uri.Host, uri.Port,
+            ProfileId(source), name, "naive", "NaiveProxy", uri.Host, uri.Port,
             RuntimeProfile: null, SourceUri: source,
             Username: Uri.UnescapeDataString(credentials[0]), Password: Uri.UnescapeDataString(credentials[1]),
             Transport: "HTTPS");
@@ -189,7 +189,7 @@ public sealed class ProfileParser
         if (!string.Equals(protocols[0], "TCP", StringComparison.OrdinalIgnoreCase))
             throw new FormatException("Only Mieru simple TCP is supported.");
         return new StoredProfile(
-            $"mieru:{uri.Host}:{port}", profileNames[0], "mieru", "Mieru simple TCP", uri.Host, port,
+            ProfileId(source), profileNames[0], "mieru", "Mieru simple TCP", uri.Host, port,
             RuntimeProfile: null, SourceUri: source,
             Username: Uri.UnescapeDataString(credentials[0]), Password: Uri.UnescapeDataString(credentials[1]),
             Transport: "TCP");
@@ -226,6 +226,10 @@ public sealed class ProfileParser
         !string.IsNullOrWhiteSpace(value) &&
         value.Length >= minimumLength &&
         value.All(character => char.IsLetterOrDigit(character) || character is '-' or '_');
+
+    private static string ProfileId(string source) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(source.Trim())))
+            [..24].ToLowerInvariant();
 }
 
 public interface ICoreConfigWriter
